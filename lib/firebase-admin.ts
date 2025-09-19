@@ -21,7 +21,7 @@ function loadServiceAccount(): ServiceAccountJSON {
 
   let parsed: ServiceAccountJSON;
   try {
-    parsed = JSON.parse(raw) as ServiceAccount;
+    parsed = JSON.parse(raw) as ServiceAccountJSON;
   } catch (error) {
     throw new Error(
       `FIREBASE_SERVICE_ACCOUNT の JSON 解析に失敗しました: ${(error as Error).message}`
