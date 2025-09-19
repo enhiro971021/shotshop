@@ -1,10 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { verifyLineIdToken } from '../../lib/line-auth';
-import { db } from '../../lib/firebase-admin';
-import { createPendingOrder } from '../../lib/orders';
-import { notifyNewOrder } from '../../lib/notifications';
-import { getProduct } from '../../lib/products';
-import type { ShopRecord } from '../../lib/shops';
+import { verifyLineIdToken } from '../../../lib/line-auth';
+import { db } from '../../../lib/firebase-admin';
+import { createPendingOrder } from '../../../lib/orders';
+import { notifyNewOrder } from '../../../lib/notifications';
+import { getProduct } from '../../../lib/products';
+import type { ShopRecord } from '../../../lib/shops';
 
 export default async function handler(
   req: NextApiRequest,
