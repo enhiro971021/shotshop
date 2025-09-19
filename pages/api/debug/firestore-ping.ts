@@ -28,7 +28,7 @@ export default async function handler(
 
     res.status(200).json({
       ok: true,
-      projectId: firestore.app.options.projectId ?? null,
+      projectId: firestore.options.projectId ?? null,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
