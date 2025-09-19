@@ -97,11 +97,23 @@ export async function createProduct(
     throw new Error('在庫数を入力してください');
   }
 
+  const name = data.name ?? '';
+  const description = data.description ?? '';
+  const price = Number(data.price);
+  const inventory = Number(data.inventory);
+  const questionEnabled = Boolean(data.questionEnabled);
+  const questionText = questionEnabled ? data.questionText ?? '' : '';
+  const imageUrl = data.imageUrl ? data.imageUrl : undefined;
+
   const payload = {
-    ...data,
     shopId,
-    description: data.description ?? '',
-    questionText: data.questionText ?? '',
+    name,
+    description,
+    price,
+    inventory,
+    imageUrl,
+    questionEnabled,
+    questionText,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     isArchived: false,
