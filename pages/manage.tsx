@@ -20,6 +20,35 @@ type SessionPayload = {
   };
 };
 
+type ShopDetail = {
+  shopId: string;
+  name: string;
+  purchaseMessage: string;
+  status: 'preparing' | 'open';
+};
+
+type ProductSummary = {
+  id: string;
+  shopId: string;
+  name: string;
+  description: string;
+  price: number;
+  inventory: number;
+  imageUrl?: string;
+  questionEnabled: boolean;
+  questionText?: string;
+};
+
+type ProductDraft = {
+  name: string;
+  description: string;
+  price: string;
+  inventory: string;
+  imageUrl: string;
+  questionEnabled: boolean;
+  questionText: string;
+};
+
 type OrderSummary = {
   id: string;
   shopId: string | null;
@@ -57,6 +86,13 @@ export default function ManagePage() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
+  const [shopDetail, setShopDetail] = useState<ShopDetail | null>(null);
+  const [shopForm, setShopForm] = useState<{ name: string; purchaseMessage: string }>(
+    { name: '', purchaseMessage: '' }
+  );
+  const [shopSaving, setShopSaving] = useState(false);
+  const [shopError, setShopError] = useState<UiError | null>(null);
+  const [shopMessage, setShopMessage] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<UiError | null>(null);
@@ -68,6 +104,20 @@ export default function ManagePage() {
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [liff, setLiff] =
     useState<(typeof import('@line/liff'))['default'] | null>(null);
+  const [products, setProducts] = useState<ProductSummary[]>([]);
+  const [productDrafts, setProductDrafts] = useState<Record<string, ProductDraft>>({});
+  const [productsLoading, setProductsLoading] = useState(false);
+  const [productError, setProductError] = useState<UiError | null>(null);
+  const [productSaving, setProductSaving] = useState<Record<string, boolean>>({});
+  const [newProductDraft, setNewProductDraft] = useState<ProductDraft>({
+    name: '',
+    description: '',
+    price: '',
+    inventory: '1',
+    imageUrl: '',
+    questionEnabled: false,
+    questionText: '',
+  });
 
   const debugMode = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -128,6 +178,358 @@ export default function ManagePage() {
     }
     return { message: String(err) };
   }, []);
+
+  const loadShop = useCallback(async () => {
+    if (!idToken) {
+      return;
+    }
+    try {
+      const response = await fetch('/api/shop', {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setShopError(err);
+        return;
+      }
+
+      const body = (await response.json()) as { shop: ShopDetail };
+      setShopDetail(body.shop);
+      setShopForm({
+        name: body.shop.name ?? '',
+        purchaseMessage: body.shop.purchaseMessage ?? '',
+      });
+      setShopError(null);
+    } catch (err) {
+      setShopError(toUiError(err));
+    }
+  }, [idToken, parseErrorResponse, toUiError]);
+
+  const loadProducts = useCallback(async () => {
+    if (!idToken) {
+      return;
+    }
+    setProductsLoading(true);
+    setProductError(null);
+    try {
+      const endpoint = debugMode ? '/api/products?debug=1' : '/api/products';
+      const response = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setProductError(err);
+        setProducts([]);
+        setProductDrafts({});
+        return;
+      }
+
+      const body = (await response.json()) as {
+        items?: ProductSummary[];
+      };
+
+      const items = Array.isArray(body.items) ? body.items : [];
+      setProducts(items);
+      const drafts: Record<string, ProductDraft> = {};
+      items.forEach((item) => {
+        drafts[item.id] = {
+          name: item.name ?? '',
+          description: item.description ?? '',
+          price: String(item.price ?? ''),
+          inventory: String(item.inventory ?? ''),
+          imageUrl: item.imageUrl ?? '',
+          questionEnabled: Boolean(item.questionEnabled),
+          questionText: item.questionText ?? '',
+        };
+      });
+      setProductDrafts(drafts);
+    } catch (err) {
+      setProductError(toUiError(err));
+      setProducts([]);
+      setProductDrafts({});
+    } finally {
+      setProductsLoading(false);
+    }
+  }, [debugMode, idToken, parseErrorResponse, toUiError]);
+
+  const handleShopInputChange = (
+    field: 'name' | 'purchaseMessage',
+    value: string
+  ) => {
+    setShopForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleShopSave = async () => {
+    if (!idToken) {
+      return;
+    }
+    setShopSaving(true);
+    setShopError(null);
+    setShopMessage(null);
+    try {
+      const response = await fetch('/api/shop', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(shopForm),
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setShopError(err);
+        return;
+      }
+
+      const body = (await response.json()) as { shop: ShopDetail };
+      setShopDetail(body.shop);
+      setShopMessage('ショップ情報を更新しました');
+    } catch (err) {
+      setShopError(toUiError(err));
+    } finally {
+      setShopSaving(false);
+    }
+  };
+
+  const handleShopStatusToggle = async () => {
+    if (!idToken || !shopDetail) {
+      return;
+    }
+    const nextStatus = shopDetail.status === 'preparing' ? 'open' : 'preparing';
+    setShopSaving(true);
+    setShopError(null);
+    setShopMessage(null);
+    try {
+      const response = await fetch('/api/shop', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setShopError(err);
+        return;
+      }
+
+      const body = (await response.json()) as { shop: ShopDetail };
+      setShopDetail(body.shop);
+      setShopMessage(
+        body.shop.status === 'open'
+          ? 'ショップを公開しました'
+          : 'ショップを準備中に戻しました'
+      );
+      await loadProducts();
+    } catch (err) {
+      setShopError(toUiError(err));
+    } finally {
+      setShopSaving(false);
+    }
+  };
+
+  const handleNewProductChange = (
+    field: keyof ProductDraft,
+    value: string | boolean
+  ) => {
+    setNewProductDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const resetNewProductDraft = () => {
+    setNewProductDraft({
+      name: '',
+      description: '',
+      price: '',
+      inventory: '1',
+      imageUrl: '',
+      questionEnabled: false,
+      questionText: '',
+    });
+  };
+
+  const handleCreateProduct = async () => {
+    if (!idToken) {
+      return;
+    }
+    setProductError(null);
+    setProductSaving((prev) => ({ ...prev, __new__: true }));
+    try {
+      const payload = {
+        name: newProductDraft.name,
+        description: newProductDraft.description,
+        price: Number(newProductDraft.price ?? 0),
+        inventory: Number(newProductDraft.inventory ?? 0),
+        imageUrl: newProductDraft.imageUrl,
+        questionEnabled: newProductDraft.questionEnabled,
+        questionText: newProductDraft.questionText,
+      };
+
+      const response = await fetch('/api/products', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setProductError(err);
+        return;
+      }
+
+      resetNewProductDraft();
+      await loadProducts();
+    } catch (err) {
+      setProductError(toUiError(err));
+    } finally {
+      setProductSaving((prev) => {
+        const next = { ...prev };
+        delete next.__new__;
+        return next;
+      });
+    }
+  };
+
+  const handleProductDraftChange = (
+    productId: string,
+    field: keyof ProductDraft,
+    value: string | boolean
+  ) => {
+    setProductDrafts((prev) => ({
+      ...prev,
+      [productId]: {
+        ...prev[productId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleProductSave = async (productId: string) => {
+    if (!idToken || !shopDetail) {
+      return;
+    }
+
+    const draft = productDrafts[productId];
+    if (!draft) {
+      return;
+    }
+
+    setProductSaving((prev) => ({ ...prev, [productId]: true }));
+    setProductError(null);
+
+    const body: Record<string, unknown> = {};
+    const original = products.find((item) => item.id === productId);
+
+    if (!original) {
+      setProductSaving((prev) => ({ ...prev, [productId]: false }));
+      return;
+    }
+
+    const priceValue = Number(draft.price ?? 0);
+    const hasPriceField = draft.price !== '' && !Number.isNaN(priceValue);
+    const inventoryValue = Number(draft.inventory ?? 0);
+    const hasInventoryField =
+      draft.inventory !== '' && !Number.isNaN(inventoryValue);
+
+    if (shopDetail.status === 'open') {
+      if (!hasInventoryField) {
+        setProductError({ message: '在庫数を入力してください' });
+        setProductSaving((prev) => ({ ...prev, [productId]: false }));
+        return;
+      }
+      body.inventory = inventoryValue;
+    } else {
+      if (draft.name !== original.name) {
+        body.name = draft.name;
+      }
+      if (draft.description !== original.description) {
+        body.description = draft.description;
+      }
+      if (hasPriceField && priceValue !== original.price) {
+        body.price = priceValue;
+      }
+      if (hasInventoryField && inventoryValue !== original.inventory) {
+        body.inventory = inventoryValue;
+      }
+      if (draft.imageUrl !== (original.imageUrl ?? '')) {
+        body.imageUrl = draft.imageUrl;
+      }
+      if (draft.questionEnabled !== original.questionEnabled) {
+        body.questionEnabled = draft.questionEnabled;
+      }
+      if ((draft.questionText ?? '') !== (original.questionText ?? '')) {
+        body.questionText = draft.questionText;
+      }
+    }
+
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setProductError(err);
+        return;
+      }
+
+      await loadProducts();
+    } catch (err) {
+      setProductError(toUiError(err));
+    } finally {
+      setProductSaving((prev) => ({ ...prev, [productId]: false }));
+    }
+  };
+
+  const handleProductDelete = async (productId: string) => {
+    if (!idToken) {
+      return;
+    }
+    if (!window.confirm('この商品を非表示にしますか？')) {
+      return;
+    }
+    setProductSaving((prev) => ({ ...prev, [productId]: true }));
+    setProductError(null);
+    try {
+      const response = await fetch(`/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setProductError(err);
+        return;
+      }
+
+      await loadProducts();
+    } catch (err) {
+      setProductError(toUiError(err));
+    } finally {
+      setProductSaving((prev) => ({ ...prev, [productId]: false }));
+    }
+  };
 
   useEffect(() => {
     const liffId =
@@ -231,9 +633,11 @@ export default function ManagePage() {
 
   useEffect(() => {
     if (stage === 'authenticated' && idToken) {
+      void loadShop();
+      void loadProducts();
       void loadOrders();
     }
-  }, [stage, idToken, loadOrders]);
+  }, [stage, idToken, loadOrders, loadProducts, loadShop]);
 
   const handleLogout = () => {
     if (liff) {
@@ -262,14 +666,15 @@ export default function ManagePage() {
       rows.push({ label: 'メールアドレス', value: session.email });
     }
 
-    if (session.shop) {
-      rows.push({ label: 'ショップID', value: session.shop.shopId });
-      rows.push({ label: 'ショップ名', value: session.shop.name });
-      rows.push({ label: 'ショップ状態', value: session.shop.status });
+    const currentShop = shopDetail ?? session.shop;
+    if (currentShop) {
+      rows.push({ label: 'ショップID', value: currentShop.shopId });
+      rows.push({ label: 'ショップ名', value: currentShop.name });
+      rows.push({ label: 'ショップ状態', value: currentShop.status });
     }
 
     return rows;
-  }, [session]);
+  }, [session, shopDetail]);
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('ja-JP', {
@@ -363,6 +768,379 @@ export default function ManagePage() {
             <button type="button" onClick={handleLogout}>
               ログアウト
             </button>
+
+            <section>
+              <h2>ショップ設定</h2>
+              {shopError && (
+                <div style={{ color: 'crimson' }}>
+                  <p>更新に失敗しました: {shopError.message}</p>
+                  {debugMode && shopError.debug && (
+                    <pre
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        background: '#fee',
+                        padding: '0.5rem',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {shopError.debug}
+                    </pre>
+                  )}
+                </div>
+              )}
+              {shopMessage && <p style={{ color: 'teal' }}>{shopMessage}</p>}
+              <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '1rem' }}>
+                <label>
+                  店舗名
+                  <input
+                    type="text"
+                    value={shopForm.name}
+                    onChange={(event) =>
+                      handleShopInputChange('name', event.target.value)
+                    }
+                    disabled={shopSaving || shopDetail?.status === 'open'}
+                    style={{ width: '100%' }}
+                  />
+                </label>
+                <label>
+                  購入時メッセージ
+                  <textarea
+                    value={shopForm.purchaseMessage}
+                    onChange={(event) =>
+                      handleShopInputChange('purchaseMessage', event.target.value)
+                    }
+                    disabled={shopSaving || shopDetail?.status === 'open'}
+                    rows={4}
+                    style={{ width: '100%' }}
+                  />
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleShopSave}
+                    disabled={
+                      shopSaving || shopDetail?.status === 'open' || !shopForm.name
+                    }
+                  >
+                    保存
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleShopStatusToggle}
+                    disabled={shopSaving}
+                  >
+                    {shopDetail?.status === 'open'
+                      ? '準備中に戻す'
+                      : '公開する'}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h2>商品管理</h2>
+              {productsLoading && <p>商品を読み込んでいます...</p>}
+              {productError && (
+                <div style={{ color: 'crimson' }}>
+                  <p>商品操作に失敗しました: {productError.message}</p>
+                  {debugMode && productError.debug && (
+                    <pre
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        background: '#fee',
+                        padding: '0.5rem',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {productError.debug}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {shopDetail?.status === 'open' && (
+                <p style={{ color: '#666' }}>
+                  ショップ公開中は在庫数のみ編集できます。
+                </p>
+              )}
+
+              {shopDetail?.status === 'preparing' && (
+                <div
+                  style={{
+                    border: '1px solid #ddd',
+                    padding: '1rem',
+                    marginBottom: '1rem',
+                    borderRadius: '6px',
+                  }}
+                >
+                  <h3>商品を追加</h3>
+                  <div style={{ display: 'grid', gap: '0.5rem' }}>
+                    <label>
+                      商品名
+                      <input
+                        type="text"
+                        value={newProductDraft.name}
+                        onChange={(event) =>
+                          handleNewProductChange('name', event.target.value)
+                        }
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    <label>
+                      説明
+                      <textarea
+                        value={newProductDraft.description}
+                        onChange={(event) =>
+                          handleNewProductChange('description', event.target.value)
+                        }
+                        rows={3}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    <label>
+                      価格（税込）
+                      <input
+                        type="number"
+                        value={newProductDraft.price}
+                        onChange={(event) =>
+                          handleNewProductChange('price', event.target.value)
+                        }
+                        min={0}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    <label>
+                      在庫数
+                      <input
+                        type="number"
+                        value={newProductDraft.inventory}
+                        onChange={(event) =>
+                          handleNewProductChange('inventory', event.target.value)
+                        }
+                        min={0}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    <label>
+                      商品画像URL
+                      <input
+                        type="url"
+                        value={newProductDraft.imageUrl}
+                        onChange={(event) =>
+                          handleNewProductChange('imageUrl', event.target.value)
+                        }
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={newProductDraft.questionEnabled}
+                        onChange={(event) =>
+                          handleNewProductChange(
+                            'questionEnabled',
+                            event.target.checked
+                          )
+                        }
+                      />
+                      購入時質問を有効にする
+                    </label>
+                    {newProductDraft.questionEnabled && (
+                      <label>
+                        質問文
+                        <textarea
+                          value={newProductDraft.questionText}
+                          onChange={(event) =>
+                            handleNewProductChange(
+                              'questionText',
+                              event.target.value
+                            )
+                          }
+                          rows={2}
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleCreateProduct}
+                      disabled={Boolean(productSaving.__new__)}
+                    >
+                      商品を追加
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {products.length === 0 && !productsLoading && (
+                <p>登録済みの商品はありません。</p>
+              )}
+
+              {products.map((product) => {
+                const draft =
+                  productDrafts[product.id] ?? {
+                    name: product.name ?? '',
+                    description: product.description ?? '',
+                    price: String(product.price ?? ''),
+                    inventory: String(product.inventory ?? ''),
+                    imageUrl: product.imageUrl ?? '',
+                    questionEnabled: Boolean(product.questionEnabled),
+                    questionText: product.questionText ?? '',
+                  };
+
+                const saving = Boolean(productSaving[product.id]);
+                const disableFields = shopDetail?.status === 'open';
+
+                return (
+                  <div
+                    key={product.id}
+                    style={{
+                      border: '1px solid #ddd',
+                      padding: '1rem',
+                      marginBottom: '1rem',
+                      borderRadius: '6px',
+                    }}
+                  >
+                    <h3 style={{ marginTop: 0 }}>{product.name}</h3>
+                    <div style={{ display: 'grid', gap: '0.5rem' }}>
+                      <label>
+                        商品名
+                        <input
+                          type="text"
+                          value={draft.name}
+                          disabled={disableFields || saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'name',
+                              event.target.value
+                            )
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        説明
+                        <textarea
+                          value={draft.description}
+                          disabled={disableFields || saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'description',
+                              event.target.value
+                            )
+                          }
+                          rows={3}
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        価格（税込）
+                        <input
+                          type="number"
+                          value={draft.price}
+                          disabled={disableFields || saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'price',
+                              event.target.value
+                            )
+                          }
+                          min={0}
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        在庫数
+                        <input
+                          type="number"
+                          value={draft.inventory}
+                          disabled={saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'inventory',
+                              event.target.value
+                            )
+                          }
+                          min={0}
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        商品画像URL
+                        <input
+                          type="url"
+                          value={draft.imageUrl}
+                          disabled={disableFields || saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'imageUrl',
+                              event.target.value
+                            )
+                          }
+                          style={{ width: '100%' }}
+                        />
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={draft.questionEnabled}
+                          disabled={disableFields || saving}
+                          onChange={(event) =>
+                            handleProductDraftChange(
+                              product.id,
+                              'questionEnabled',
+                              event.target.checked
+                            )
+                          }
+                        />
+                        購入時質問を有効にする
+                      </label>
+                      {draft.questionEnabled && (
+                        <label>
+                          質問文
+                          <textarea
+                            value={draft.questionText}
+                            disabled={disableFields || saving}
+                            onChange={(event) =>
+                              handleProductDraftChange(
+                                product.id,
+                                'questionText',
+                                event.target.value
+                              )
+                            }
+                            rows={2}
+                            style={{ width: '100%' }}
+                          />
+                        </label>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleProductSave(product.id)}
+                        disabled={saving}
+                      >
+                        保存
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleProductDelete(product.id)}
+                        disabled={saving}
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
 
             <section>
               <h2>受注一覧</h2>
