@@ -1,7 +1,13 @@
 import type {
+  DocumentReference,
   DocumentSnapshot,
   QueryDocumentSnapshot,
 } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
+import { createHash } from 'crypto';
+import { db } from './firebase-admin';
+import type { ShopRecord } from './shops';
+import type { ProductRecord } from './products';
 
 export type SerializedOrderItem = {
   productId?: string;
@@ -27,6 +33,11 @@ export type SerializedOrder = {
 };
 
 const ORDER_STATUSES = ['pending', 'accepted', 'canceled'] as const;
+
+function makeBuyerDisplayId(buyerUserId: string) {
+  const hash = createHash('sha256').update(buyerUserId).digest('hex');
+  return hash.slice(0, 12);
+}
 
 function toMillis(value: unknown): number | null {
   if (
@@ -215,4 +226,224 @@ export function serializeOrderSnapshot(
         : null,
     closed: Boolean((data as { closed?: unknown }).closed),
   };
+}
+
+export async function listOrdersForShop(
+  shopId: string,
+  {
+    status,
+    limit = 100,
+  }: {
+    status?: 'pending' | 'accepted' | 'canceled';
+    limit?: number;
+  } = {}
+) {
+  let query = db
+    .collection('orders')
+    .where('shopId', '==', shopId)
+    .orderBy('createdAt', 'desc');
+
+  if (status) {
+    query = query.where('status', '==', status);
+  }
+
+  const snapshot = await query.limit(limit).get();
+  return snapshot.docs.map((doc) => serializeOrderSnapshot(doc));
+}
+
+export async function getOrderForShop(
+  shopId: string,
+  orderId: string
+) {
+  const doc = await db.collection('orders').doc(orderId).get();
+  if (!doc.exists) {
+    throw new Error('注文が見つかりません');
+  }
+  const data = doc.data();
+  if (data?.shopId !== shopId) {
+    throw new Error('この注文にアクセスできません');
+  }
+  return serializeOrderSnapshot(doc);
+}
+
+type CreateOrderInput = {
+  shop: ShopRecord;
+  product: ProductRecord;
+  quantity: number;
+  buyerUserId: string;
+  questionResponse?: string | null;
+};
+
+function startOfTodayMillis() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
+async function assertDailyPurchaseLimit(buyerUserId: string) {
+  const threshold = startOfTodayMillis();
+  const snapshot = await db
+    .collection('orders')
+    .where('buyerUserId', '==', buyerUserId)
+    .where('createdAt', '>=', new Date(threshold))
+    .limit(11)
+    .get();
+
+  if (snapshot.docs.length >= 10) {
+    throw new Error('1日の購入上限に達しました');
+  }
+}
+
+export async function createPendingOrder({
+  shop,
+  product,
+  quantity,
+  buyerUserId,
+  questionResponse,
+}: CreateOrderInput) {
+  if (shop.status !== 'open') {
+    throw new Error('現在このショップは購入できません');
+  }
+  if (product.inventory <= 0) {
+    throw new Error('在庫がありません');
+  }
+  if (quantity <= 0) {
+    throw new Error('数量を1以上に指定してください');
+  }
+  if (quantity > product.inventory) {
+    throw new Error('在庫数を超えています');
+  }
+
+  await assertDailyPurchaseLimit(buyerUserId);
+
+  const now = FieldValue.serverTimestamp();
+  const displayId = makeBuyerDisplayId(buyerUserId);
+  const total = product.price * quantity;
+
+  const payload = {
+    shopId: shop.shopId,
+    buyerUserId,
+    buyerDisplayId: displayId,
+    status: 'pending' as const,
+    items: [
+      {
+        productId: product.id,
+        name: product.name,
+        unitPrice: product.price,
+        quantity,
+      },
+    ],
+    total,
+    questionResponse: questionResponse ?? null,
+    memo: '',
+    closed: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const ref = await db.collection('orders').add(payload);
+  const created = await ref.get();
+  return serializeOrderSnapshot(created);
+}
+
+type UpdateOrderAction = 'accept' | 'cancel';
+
+export async function updateOrderStatus(
+  shopId: string,
+  orderId: string,
+  action: UpdateOrderAction
+) {
+  const orderRef = db.collection('orders').doc(orderId);
+
+  const result = await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) {
+      throw new Error('注文が見つかりません');
+    }
+
+    const order = orderSnap.data() as SerializedOrder;
+
+    if (order.shopId !== shopId) {
+      throw new Error('この注文にアクセスできません');
+    }
+
+    if (order.status !== 'pending') {
+      throw new Error('pending の注文のみ操作できます');
+    }
+
+    const item = order.items?.[0];
+    if (!item) {
+      throw new Error('注文の商品情報が不正です');
+    }
+
+    const productRef = db.collection('products').doc(item.productId);
+    const productSnap = await tx.get(productRef);
+    if (!productSnap.exists) {
+      throw new Error('関連する商品が見つかりません');
+    }
+    const product = productSnap.data() as ProductRecord;
+
+    if (action === 'accept') {
+      const nextInventory = product.inventory - item.quantity;
+      if (nextInventory < 0) {
+        throw new Error('在庫が不足しています');
+      }
+      tx.update(productRef, {
+        inventory: nextInventory,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      tx.update(orderRef, {
+        status: 'accepted',
+        acceptedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } else {
+      tx.update(orderRef, {
+        status: 'canceled',
+        canceledAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    return {
+      order: order,
+      product,
+    };
+  });
+
+  const updatedSnap = await orderRef.get();
+  return serializeOrderSnapshot(updatedSnap);
+}
+
+export async function updateOrderMeta(
+  shopId: string,
+  orderId: string,
+  meta: { memo?: string; closed?: boolean }
+) {
+  const orderRef = db.collection('orders').doc(orderId);
+  const snapshot = await orderRef.get();
+
+  if (!snapshot.exists) {
+    throw new Error('注文が見つかりません');
+  }
+  const data = snapshot.data() as SerializedOrder;
+  if (data.shopId !== shopId) {
+    throw new Error('この注文にアクセスできません');
+  }
+
+  const payload: Record<string, unknown> = {
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  if (typeof meta.memo === 'string') {
+    payload.memo = meta.memo.slice(0, 2000);
+  }
+  if (typeof meta.closed === 'boolean') {
+    payload.closed = meta.closed;
+  }
+
+  await orderRef.set(payload, { merge: true });
+
+  const updated = await orderRef.get();
+  return serializeOrderSnapshot(updated);
 }

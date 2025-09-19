@@ -1,5 +1,5 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { getFirestore } from './firebase-admin';
+import { db } from './firebase-admin';
 
 export type ShopStatus = 'preparing' | 'open';
 
@@ -16,7 +16,6 @@ export type ShopRecord = {
 const DEFAULT_PURCHASE_MESSAGE = 'ご購入ありがとうございます！支払い方法については追ってご連絡します。';
 
 export async function getOrCreateShop(ownerUserId: string) {
-  const db = getFirestore();
   const shopRef = db.collection('shops').doc(ownerUserId);
   const snapshot = await shopRef.get();
 
@@ -41,7 +40,6 @@ export async function getOrCreateShop(ownerUserId: string) {
 }
 
 export async function getShop(ownerUserId: string) {
-  const db = getFirestore();
   const shopRef = db.collection('shops').doc(ownerUserId);
   const snapshot = await shopRef.get();
 
@@ -49,5 +47,50 @@ export async function getShop(ownerUserId: string) {
     throw new Error('ショップが見つかりません。先に /api/session で初期化してください');
   }
 
+  return snapshot.data() as ShopRecord;
+}
+
+export async function updateShop(
+  ownerUserId: string,
+  payload: Pick<ShopRecord, 'name' | 'purchaseMessage'>
+) {
+  const { name, purchaseMessage } = payload;
+
+  if (!name || name.trim().length === 0) {
+    throw new Error('店舗名を入力してください');
+  }
+
+  if (!purchaseMessage || purchaseMessage.trim().length === 0) {
+    throw new Error('購入時メッセージを入力してください');
+  }
+
+  const shopRef = db.collection('shops').doc(ownerUserId);
+  await shopRef.set(
+    {
+      name: name.trim(),
+      purchaseMessage: purchaseMessage.trim(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const snapshot = await shopRef.get();
+  return snapshot.data() as ShopRecord;
+}
+
+export async function updateShopStatus(
+  ownerUserId: string,
+  status: ShopStatus
+) {
+  const shopRef = db.collection('shops').doc(ownerUserId);
+  await shopRef.set(
+    {
+      status,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const snapshot = await shopRef.get();
   return snapshot.data() as ShopRecord;
 }
