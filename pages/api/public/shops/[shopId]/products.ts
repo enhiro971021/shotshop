@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { db } from '../../../../../lib/firebase-admin';
+import type { ProductRecord } from '../../../../../lib/products';
 
 export default async function handler(
   req: NextApiRequest,
@@ -28,29 +29,25 @@ export default async function handler(
     .where('shopId', '==', shopId)
     .get();
 
-  const items = snapshot.docs
-    .map((doc) => ({
+  const records: Array<ProductRecord & { id: string }> = snapshot.docs.map(
+    (doc) => ({
       id: doc.id,
-      ...(doc.data() as Record<string, unknown>),
-    }))
+      ...(doc.data() as ProductRecord),
+    })
+  );
+
+  const items = records
     .filter((item) => item.isArchived !== true)
     .filter((item) => Number(item.inventory ?? 0) > 0)
     .map((item) => ({
       id: item.id,
-      name: typeof item.name === 'string' ? item.name : '',
-      description:
-        typeof item.description === 'string' ? item.description : '',
-      price:
-        typeof item.price === 'number' ? item.price : Number(item.price ?? 0),
-      inventory:
-        typeof item.inventory === 'number'
-          ? item.inventory
-          : Number(item.inventory ?? 0),
-      imageUrl:
-        typeof item.imageUrl === 'string' ? item.imageUrl : undefined,
+      name: item.name ?? '',
+      description: item.description ?? '',
+      price: Number(item.price ?? 0),
+      inventory: Number(item.inventory ?? 0),
+      imageUrl: item.imageUrl ?? undefined,
       questionEnabled: Boolean(item.questionEnabled),
-      questionText:
-        typeof item.questionText === 'string' ? item.questionText : '',
+      questionText: item.questionText ?? '',
     }));
 
   res.status(200).json({ items });
