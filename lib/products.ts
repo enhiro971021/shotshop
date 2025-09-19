@@ -100,6 +100,8 @@ export async function createProduct(
   const payload = {
     ...data,
     shopId,
+    description: data.description ?? '',
+    questionText: data.questionText ?? '',
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     isArchived: false,
