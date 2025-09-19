@@ -29,18 +29,28 @@ export default async function handler(
     .get();
 
   const items = snapshot.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .map((doc) => ({
+      id: doc.id,
+      ...(doc.data() as Record<string, unknown>),
+    }))
     .filter((item) => item.isArchived !== true)
-    .filter((item) => (item.inventory ?? 0) > 0)
+    .filter((item) => Number(item.inventory ?? 0) > 0)
     .map((item) => ({
       id: item.id,
-      name: item.name,
-      description: item.description,
-      price: item.price,
-      inventory: item.inventory,
-      imageUrl: item.imageUrl,
-      questionEnabled: item.questionEnabled,
-      questionText: item.questionText,
+      name: typeof item.name === 'string' ? item.name : '',
+      description:
+        typeof item.description === 'string' ? item.description : '',
+      price:
+        typeof item.price === 'number' ? item.price : Number(item.price ?? 0),
+      inventory:
+        typeof item.inventory === 'number'
+          ? item.inventory
+          : Number(item.inventory ?? 0),
+      imageUrl:
+        typeof item.imageUrl === 'string' ? item.imageUrl : undefined,
+      questionEnabled: Boolean(item.questionEnabled),
+      questionText:
+        typeof item.questionText === 'string' ? item.questionText : '',
     }));
 
   res.status(200).json({ items });
