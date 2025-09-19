@@ -110,9 +110,11 @@ export default function ManagePage() {
       typeof (value as { _seconds?: unknown })._seconds === 'number'
     ) {
       const seconds = (value as { _seconds: number })._seconds;
+      const nanosCandidate =
+        value as Record<string, unknown> & { _nanoseconds?: unknown };
       const nanos =
-        typeof (value as { _nanoseconds?: unknown })._nanoseconds === 'number'
-          ? ((value as { _nanoseconds: number })._nanoseconds as number)
+        typeof nanosCandidate._nanoseconds === 'number'
+          ? nanosCandidate._nanoseconds
           : 0;
       const millis = seconds * 1000 + Math.floor(nanos / 1_000_000);
       return new Date(millis).toISOString();
