@@ -103,21 +103,23 @@ export async function createProduct(
   const inventory = Number(data.inventory);
   const questionEnabled = Boolean(data.questionEnabled);
   const questionText = questionEnabled ? data.questionText ?? '' : '';
-  const imageUrl = data.imageUrl ? data.imageUrl : undefined;
 
-  const payload = {
+  const payload: Omit<ProductRecord, 'id'> = {
     shopId,
     name,
     description,
     price,
     inventory,
-    imageUrl,
     questionEnabled,
     questionText,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     isArchived: false,
-  } satisfies Omit<ProductRecord, 'id'>;
+  };
+
+  if (data.imageUrl && data.imageUrl.trim().length > 0) {
+    payload.imageUrl = data.imageUrl.trim();
+  }
 
   const ref = await db.collection('products').add(payload);
   const created = await ref.get();
@@ -142,13 +144,38 @@ export async function updateProduct(
     throw new Error('この商品の編集権限がありません');
   }
 
-  await productRef.set(
-    {
-      ...data,
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  const updatePayload: Partial<ProductRecord> = {
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  if (data.name !== undefined) {
+    updatePayload.name = data.name ?? '';
+  }
+  if (data.description !== undefined) {
+    updatePayload.description = data.description ?? '';
+  }
+  if (data.price !== undefined) {
+    updatePayload.price = Number(data.price);
+  }
+  if (data.inventory !== undefined) {
+    updatePayload.inventory = Number(data.inventory);
+  }
+  if (data.imageUrl !== undefined) {
+    updatePayload.imageUrl = data.imageUrl
+      ? data.imageUrl.trim()
+      : undefined;
+  }
+  if (data.questionEnabled !== undefined) {
+    updatePayload.questionEnabled = Boolean(data.questionEnabled);
+    if (!data.questionEnabled) {
+      updatePayload.questionText = '';
+    }
+  }
+  if (data.questionText !== undefined && data.questionEnabled !== false) {
+    updatePayload.questionText = data.questionText ?? '';
+  }
+
+  await productRef.set(updatePayload, { merge: true });
 
   const updated = await productRef.get();
   return { id: updated.id, ...updated.data() } as ProductRecord;
