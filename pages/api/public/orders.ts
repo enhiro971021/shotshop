@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { verifyLineIdToken } from '../../lib/line-auth';
 import { db } from '../../lib/firebase-admin';
 import { createPendingOrder } from '../../lib/orders';
+import { notifyNewOrder } from '../../lib/notifications';
 import { getProduct } from '../../lib/products';
 import type { ShopRecord } from '../../lib/shops';
 
@@ -59,6 +60,7 @@ export default async function handler(
       status: shopData.status,
       createdAt: shopData.createdAt ?? null,
       updatedAt: shopData.updatedAt ?? null,
+      contactPendingOrderId: shopData.contactPendingOrderId ?? null,
     };
 
     const product = await getProduct(productId);
@@ -84,6 +86,8 @@ export default async function handler(
       buyerUserId,
       questionResponse,
     });
+
+    await notifyNewOrder(order, shop);
 
     res.status(201).json({ order });
   } catch (error) {

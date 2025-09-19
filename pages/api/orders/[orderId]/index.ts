@@ -1,9 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { authAndGetShopId } from '../../../../lib/auth';
+import { getOrCreateShop } from '../../../../lib/shops';
 import {
   updateOrderMeta,
   updateOrderStatus,
 } from '../../../../lib/orders';
+import {
+  notifyOrderAccepted,
+  notifyOrderCanceled,
+} from '../../../../lib/notifications';
 
 const ALLOWED_ACTIONS = ['accept', 'cancel'] as const;
 
@@ -33,7 +38,10 @@ export default async function handler(
   const debug = req.query.debug === '1';
 
   try {
-    const { shopId } = await authAndGetShopId(req.headers.authorization);
+    const { payload, shopId } = await authAndGetShopId(
+      req.headers.authorization
+    );
+    const shop = await getOrCreateShop(payload.sub);
     if (req.method === 'POST') {
       const action = req.body?.action;
       if (!isAction(action)) {
@@ -43,6 +51,11 @@ export default async function handler(
         return;
       }
       const updated = await updateOrderStatus(shopId, orderId, action);
+      if (action === 'accept') {
+        await notifyOrderAccepted(updated, shop);
+      } else {
+        await notifyOrderCanceled(updated);
+      }
       res.status(200).json({ item: updated });
       return;
     }

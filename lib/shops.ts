@@ -11,6 +11,7 @@ export type ShopRecord = {
   status: ShopStatus;
   createdAt?: FirebaseFirestore.Timestamp | FieldValue;
   updatedAt?: FirebaseFirestore.Timestamp | FieldValue;
+  contactPendingOrderId?: string | null;
 };
 
 const DEFAULT_PURCHASE_MESSAGE = 'ご購入ありがとうございます！支払い方法については追ってご連絡します。';
@@ -86,6 +87,23 @@ export async function updateShopStatus(
   await shopRef.set(
     {
       status,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  const snapshot = await shopRef.get();
+  return snapshot.data() as ShopRecord;
+}
+
+export async function setContactPendingOrder(
+  ownerUserId: string,
+  orderId: string | null
+) {
+  const shopRef = db.collection('shops').doc(ownerUserId);
+  await shopRef.set(
+    {
+      contactPendingOrderId: orderId,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }

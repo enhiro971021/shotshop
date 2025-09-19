@@ -7,6 +7,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { createHash } from 'crypto';
 import { db } from './firebase-admin';
 import type { ShopRecord } from './shops';
+import { setContactPendingOrder } from './shops';
 import type { ProductRecord } from './products';
 
 export type SerializedOrderItem = {
@@ -19,6 +20,7 @@ export type SerializedOrderItem = {
 export type SerializedOrder = {
   id: string;
   shopId: string | null;
+  buyerUserId: string;
   buyerDisplayId: string;
   status: 'pending' | 'accepted' | 'canceled';
   total: number;
@@ -30,6 +32,7 @@ export type SerializedOrder = {
   questionResponse?: string | null;
   memo?: string | null;
   closed?: boolean;
+  contactPending?: boolean;
 };
 
 const ORDER_STATUSES = ['pending', 'accepted', 'canceled'] as const;
@@ -190,6 +193,11 @@ export function serializeOrderSnapshot(
       ? ((data as { buyerDisplayId: string }).buyerDisplayId as string)
       : 'unknown';
 
+  const buyerUserId =
+    typeof (data as { buyerUserId?: unknown }).buyerUserId === 'string'
+      ? ((data as { buyerUserId: string }).buyerUserId as string)
+      : '';
+
   const shopId =
     typeof (data as { shopId?: unknown }).shopId === 'string'
       ? ((data as { shopId: string }).shopId as string)
@@ -198,6 +206,7 @@ export function serializeOrderSnapshot(
   return {
     id: snapshot.id,
     shopId,
+    buyerUserId,
     buyerDisplayId,
     status,
     total,
@@ -225,6 +234,7 @@ export function serializeOrderSnapshot(
         ? String((data as { memo?: unknown }).memo)
         : null,
     closed: Boolean((data as { closed?: unknown }).closed),
+    contactPending: Boolean((data as { contactPending?: unknown }).contactPending),
   };
 }
 
@@ -337,6 +347,7 @@ export async function createPendingOrder({
     questionResponse: questionResponse ?? null,
     memo: '',
     closed: false,
+     contactPending: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -446,4 +457,66 @@ export async function updateOrderMeta(
 
   const updated = await orderRef.get();
   return serializeOrderSnapshot(updated);
+}
+
+export async function markContactPending(
+  ownerUserId: string,
+  shopId: string,
+  orderId: string
+) {
+  const orderRef = db.collection('orders').doc(orderId);
+
+  await db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(orderRef);
+    if (!snapshot.exists) {
+      throw new Error('注文が見つかりません');
+    }
+    const order = snapshot.data() as SerializedOrder;
+    if (order.shopId !== shopId) {
+      throw new Error('この注文にアクセスできません');
+    }
+    tx.update(orderRef, {
+      contactPending: true,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await setContactPendingOrder(ownerUserId, orderId);
+  const updated = await orderRef.get();
+  return serializeOrderSnapshot(updated);
+}
+
+export async function consumeContactPendingOrder(ownerUserId: string) {
+  const shopDoc = await db.collection('shops').doc(ownerUserId).get();
+  if (!shopDoc.exists) {
+    return null;
+  }
+  const shopData = shopDoc.data();
+  const pendingOrderId = shopData?.contactPendingOrderId;
+  if (!pendingOrderId) {
+    return null;
+  }
+
+  const orderRef = db.collection('orders').doc(pendingOrderId);
+  const snapshot = await orderRef.get();
+  if (!snapshot.exists) {
+    await setContactPendingOrder(ownerUserId, null);
+    return null;
+  }
+
+  const orderData = snapshot.data() as SerializedOrder;
+  if (orderData.shopId !== shopData?.shopId) {
+    await setContactPendingOrder(ownerUserId, null);
+    return null;
+  }
+
+  await db.runTransaction(async (tx) => {
+    tx.update(orderRef, {
+      contactPending: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  await setContactPendingOrder(ownerUserId, null);
+  return serializeOrderSnapshot(await orderRef.get());
 }
