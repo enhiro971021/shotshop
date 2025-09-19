@@ -1,4 +1,4 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type WithFieldValue } from 'firebase-admin/firestore';
 import { getFirestore } from './firebase-admin';
 
 export type ShopStatus = 'preparing' | 'open';
@@ -24,10 +24,7 @@ export async function getOrCreateShop(ownerUserId: string) {
     return snapshot.data() as ShopRecord;
   }
 
-  const shop: ShopRecord & {
-    createdAt: FirebaseFirestore.FieldValue;
-    updatedAt: FirebaseFirestore.FieldValue;
-  } = {
+  const shop: WithFieldValue<ShopRecord> = {
     ownerUserId,
     shopId: ownerUserId,
     name: '新しいショップ',
