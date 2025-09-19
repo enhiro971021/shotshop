@@ -32,6 +32,28 @@ function sanitizeInput(input: Partial<ProductRecord>) {
   return input;
 }
 
+function toTimestampMillis(value: unknown) {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toMillis' in value &&
+    typeof (value as { toMillis?: unknown }).toMillis === 'function'
+  ) {
+    try {
+      return (value as { toMillis: () => number }).toMillis();
+    } catch {
+      return 0;
+    }
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === 'number') {
+    return value;
+  }
+  return 0;
+}
+
 export async function listProducts(shopId: string) {
   const snapshot = await db
     .collection('products')
@@ -45,11 +67,7 @@ export async function listProducts(shopId: string) {
 
   return records
     .filter((product) => product.isArchived !== true)
-    .sort((a, b) => {
-      const createdAtA = (a.createdAt as FirebaseFirestore.Timestamp | undefined)?.toMillis?.() ?? 0;
-      const createdAtB = (b.createdAt as FirebaseFirestore.Timestamp | undefined)?.toMillis?.() ?? 0;
-      return createdAtB - createdAtA;
-    });
+    .sort((a, b) => toTimestampMillis(b.createdAt) - toTimestampMillis(a.createdAt));
 }
 
 export async function getProduct(productId: string) {
