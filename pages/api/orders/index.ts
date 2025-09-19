@@ -1,91 +1,35 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { authenticateRequest, UnauthorizedError } from '../../../lib/line-auth';
-import { getFirestore } from '../../../lib/firebase-admin';
-import { getShop } from '../../../lib/shops';
-
-export type OrderStatus = 'pending' | 'accepted' | 'canceled';
-
-export type OrderSummary = {
-  id: string;
-  createdAt: string | null;
-  buyerDisplayId: string;
-  status: OrderStatus;
-  total: number;
-  items: Array<{
-    productId?: string;
-    name: string;
-    quantity: number;
-    unitPrice: number;
-  }>;
-  questionResponse?: string | null;
-  memo?: string | null;
-  closed?: boolean;
-};
-
-export type OrderListResponse = {
-  orders: OrderSummary[];
-};
-
-export type ErrorResponse = {
-  message: string;
-};
-
-function mapOrder(doc: FirebaseFirestore.QueryDocumentSnapshot): OrderSummary {
-  const data = doc.data();
-  const items = (Array.isArray(data.items) ? data.items : []) as OrderSummary['items'];
-
-  const total =
-    typeof data.total === 'number'
-      ? data.total
-      : items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-
-  const createdAt =
-    data.createdAt && typeof data.createdAt.toDate === 'function'
-      ? data.createdAt.toDate().toISOString()
-      : null;
-
-  return {
-    id: doc.id,
-    createdAt,
-    buyerDisplayId: data.buyerDisplayId ?? 'unknown',
-    status: (data.status as OrderStatus) ?? 'pending',
-    total,
-    items,
-    questionResponse: data.questionResponse ?? null,
-    memo: data.memo ?? null,
-    closed: data.closed ?? false,
-  };
-}
+import { db } from '../../../lib/firebase-admin';
+import { authAndGetShopId } from '../../../lib/auth';
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<OrderListResponse | ErrorResponse>
+  res: NextApiResponse
 ) {
   if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    res.status(405).json({ message: 'Method Not Allowed' });
+    res.status(405).end('Method Not Allowed');
     return;
   }
 
   try {
-    const payload = await authenticateRequest(req);
-    const shop = await getShop(payload.sub);
-    const db = getFirestore();
-    const snapshot = await db
-      .collection('orders')
-      .where('shopId', '==', shop.shopId)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .get();
+    const { shopId } = await authAndGetShopId(req.headers.authorization);
 
-    const orders = snapshot.docs.map(mapOrder);
+    let query = db.collection('orders').where('shopId', '==', shopId);
 
-    res.status(200).json({ orders });
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      res.status(401).json({ message: error.message });
-      return;
+    const status = req.query.status;
+    if (typeof status === 'string' && status.length > 0) {
+      query = query.where('status', '==', status);
     }
-    res.status(500).json({ message: (error as Error).message });
+
+    query = query.orderBy('createdAt', 'desc');
+
+    const snapshot = await query.limit(100).get();
+    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    res.status(200).json({ items });
+  } catch (error) {
+    res
+      .status(401)
+      .json({ error: (error as Error).message ?? String(error) });
   }
 }

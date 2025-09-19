@@ -80,3 +80,5 @@ export function getFirestore(): Firestore {
 
   return firestore;
 }
+
+export const db = ((): Firestore => getFirestore())();
