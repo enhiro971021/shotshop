@@ -31,8 +31,8 @@ export default async function handler(
 
   const records: Array<ProductRecord & { id: string }> = snapshot.docs.map(
     (doc) => ({
-      id: doc.id,
       ...(doc.data() as ProductRecord),
+      id: doc.id,
     })
   );
 
