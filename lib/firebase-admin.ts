@@ -46,7 +46,7 @@ function convertServiceAccount(
   };
 }
 
-function getFirebaseApp(): App {
+export function getFirebaseApp(): App {
   if (firebaseApp) {
     return firebaseApp;
   }

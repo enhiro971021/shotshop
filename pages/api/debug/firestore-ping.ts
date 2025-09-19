@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getFirestore } from '../../../lib/firebase-admin';
+import { getFirebaseApp, getFirestore } from '../../../lib/firebase-admin';
 
 type PingResponse = {
   ok: true;
@@ -28,7 +28,7 @@ export default async function handler(
 
     res.status(200).json({
       ok: true,
-      projectId: firestore.app?.options.projectId ?? null,
+      projectId: getFirebaseApp().options.projectId ?? null,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
