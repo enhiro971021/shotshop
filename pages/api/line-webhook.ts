@@ -53,8 +53,14 @@ export default async function handler(
     return;
   }
 
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Allow', 'GET,HEAD,POST,OPTIONS');
+    res.status(200).end();
+    return;
+  }
+
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'GET,HEAD,POST');
+    res.setHeader('Allow', 'GET,HEAD,POST,OPTIONS');
     res.status(405).end('Method Not Allowed');
     return;
   }
