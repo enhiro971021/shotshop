@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { db } from '../../../lib/firebase-admin';
 import { authAndGetShopId } from '../../../lib/auth';
+import { serializeOrderSnapshot } from '../../../lib/orders';
 
 export default async function handler(
   req: NextApiRequest,
@@ -26,7 +27,7 @@ export default async function handler(
     query = query.orderBy('createdAt', 'desc');
 
     const snapshot = await query.limit(100).get();
-    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const items = snapshot.docs.map(serializeOrderSnapshot);
 
     res.status(200).json({ items });
   } catch (error) {

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { FieldValue } from 'firebase-admin/firestore';
 import { authAndGetShopId } from '../../../../lib/auth';
 import { db } from '../../../../lib/firebase-admin';
+import { serializeOrderSnapshot } from '../../../../lib/orders';
 
 const ALLOWED_ACTIONS = ['accept', 'cancel'] as const;
 
@@ -83,7 +84,7 @@ export default async function handler(
     });
 
     const updated = await orderRef.get();
-    res.status(200).json({ item: { id: updated.id, ...updated.data() } });
+    res.status(200).json({ item: serializeOrderSnapshot(updated) });
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 401;
     const err = error as Error;

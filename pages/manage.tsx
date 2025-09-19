@@ -90,6 +90,10 @@ export default function ManagePage() {
       return value.toISOString();
     }
 
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return new Date(value).toISOString();
+    }
+
     if (
       typeof value === 'object' &&
       value !== null &&
