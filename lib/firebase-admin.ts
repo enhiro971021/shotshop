@@ -1,9 +1,9 @@
 import { cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore as getFirestoreInternal } from 'firebase-admin/firestore';
-import type { App } from 'firebase-admin/app';
+import type { App, ServiceAccount } from 'firebase-admin/app';
 import type { Firestore } from 'firebase-admin/firestore';
 
-type ServiceAccount = {
+type ServiceAccountJSON = {
   project_id: string;
   client_email: string;
   private_key: string;
@@ -12,14 +12,14 @@ type ServiceAccount = {
 let firebaseApp: App | null = null;
 let firestore: Firestore | null = null;
 
-function loadServiceAccount(): ServiceAccount {
+function loadServiceAccount(): ServiceAccountJSON {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (!raw) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT 環境変数が設定されていません');
   }
 
-  let parsed: ServiceAccount;
+  let parsed: ServiceAccountJSON;
   try {
     parsed = JSON.parse(raw) as ServiceAccount;
   } catch (error) {
@@ -33,9 +33,17 @@ function loadServiceAccount(): ServiceAccount {
   }
 
   // Vercel の環境変数に保存した際に \n へ変換されているケースを考慮
-  parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
-
   return parsed;
+}
+
+function convertServiceAccount(
+  json: ServiceAccountJSON
+): ServiceAccount {
+  return {
+    projectId: json.project_id,
+    clientEmail: json.client_email,
+    privateKey: json.private_key.replace(/\\n/g, '\n'),
+  };
 }
 
 function getFirebaseApp(): App {
@@ -48,11 +56,12 @@ function getFirebaseApp(): App {
     return firebaseApp;
   }
 
-  const serviceAccount = loadServiceAccount();
+  const serviceAccountJson = loadServiceAccount();
+  const serviceAccount = convertServiceAccount(serviceAccountJson);
 
   firebaseApp = initializeApp({
     credential: cert(serviceAccount),
-    projectId: serviceAccount.project_id,
+    projectId: serviceAccount.projectId,
   });
 
   return firebaseApp;
