@@ -1,4 +1,4 @@
-import { FieldValue, type WithFieldValue } from 'firebase-admin/firestore';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getFirestore } from './firebase-admin';
 
 export type ShopStatus = 'preparing' | 'open';
@@ -9,8 +9,8 @@ export type ShopRecord = {
   name: string;
   purchaseMessage: string;
   status: ShopStatus;
-  createdAt?: FirebaseFirestore.Timestamp;
-  updatedAt?: FirebaseFirestore.Timestamp;
+  createdAt?: FirebaseFirestore.Timestamp | FieldValue;
+  updatedAt?: FirebaseFirestore.Timestamp | FieldValue;
 };
 
 const DEFAULT_PURCHASE_MESSAGE = 'ご購入ありがとうございます！支払い方法については追ってご連絡します。';
@@ -24,7 +24,7 @@ export async function getOrCreateShop(ownerUserId: string) {
     return snapshot.data() as ShopRecord;
   }
 
-  const shop: WithFieldValue<ShopRecord> = {
+  const shop: ShopRecord = {
     ownerUserId,
     shopId: ownerUserId,
     name: '新しいショップ',
