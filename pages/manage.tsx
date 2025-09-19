@@ -41,6 +41,11 @@ type OrderSummary = {
 
 type OrderAction = 'accept' | 'cancel';
 
+type UiError = {
+  message: string;
+  debug?: string;
+};
+
 type Stage =
   | 'idle'
   | 'initializing'
@@ -55,15 +60,187 @@ export default function ManagePage() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
-  const [ordersError, setOrdersError] = useState<string | null>(null);
+  const [ordersError, setOrdersError] = useState<UiError | null>(null);
   const [actionState, setActionState] = useState<{
     orderId: string;
     action: OrderAction;
   } | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<UiError | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [liff, setLiff] =
     useState<(typeof import('@line/liff'))['default'] | null>(null);
+
+  const debugMode = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return new URLSearchParams(window.location.search).get('debug') === '1';
+  }, []);
+
+  const toIsoString = useCallback((value: unknown): string | null => {
+    if (!value) {
+      return null;
+    }
+
+    if (typeof value === 'string') {
+      return value;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'toDate' in value &&
+      typeof (value as { toDate?: () => Date }).toDate === 'function'
+    ) {
+      try {
+        return (value as { toDate: () => Date }).toDate().toISOString();
+      } catch {
+        return null;
+      }
+    }
+
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      '_seconds' in value &&
+      typeof (value as { _seconds?: unknown })._seconds === 'number'
+    ) {
+      const seconds = (value as { _seconds: number })._seconds;
+      const nanos =
+        typeof (value as { _nanoseconds?: unknown })._nanoseconds === 'number'
+          ? ((value as { _nanoseconds: number })._nanoseconds as number)
+          : 0;
+      const millis = seconds * 1000 + Math.floor(nanos / 1_000_000);
+      return new Date(millis).toISOString();
+    }
+
+    return null;
+  }, []);
+
+  const normalizeOrder = useCallback(
+    (raw: Record<string, unknown>): OrderSummary => {
+      const itemsRaw = Array.isArray(raw.items)
+        ? (raw.items as Array<Record<string, unknown>>)
+        : [];
+
+      const items: OrderItem[] = itemsRaw.map((item, index) => {
+        if (!item || typeof item !== 'object') {
+          return {
+            name: `商品${index + 1}`,
+            quantity: 0,
+            unitPrice: 0,
+          };
+        }
+
+        const quantityRaw = (item as { quantity?: unknown }).quantity;
+        const unitPriceRaw = (item as { unitPrice?: unknown }).unitPrice;
+
+        const quantity =
+          typeof quantityRaw === 'number'
+            ? quantityRaw
+            : Number(quantityRaw ?? 0);
+
+        const unitPrice =
+          typeof unitPriceRaw === 'number'
+            ? unitPriceRaw
+            : Number(unitPriceRaw ?? 0);
+
+        return {
+          productId:
+            typeof item.productId === 'string' ? item.productId : undefined,
+          name:
+            typeof item.name === 'string'
+              ? item.name
+              : `商品${index + 1}`,
+          quantity: Number.isFinite(quantity) ? quantity : 0,
+          unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+        };
+      });
+
+      const totalRaw = raw.total;
+      const total =
+        typeof totalRaw === 'number'
+          ? totalRaw
+          : items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
+
+      return {
+        id: typeof raw.id === 'string' ? raw.id : 'unknown',
+        createdAt: toIsoString(raw.createdAt),
+        buyerDisplayId:
+          typeof raw.buyerDisplayId === 'string'
+            ? raw.buyerDisplayId
+            : 'unknown',
+        status:
+          raw.status === 'accepted' ||
+          raw.status === 'canceled' ||
+          raw.status === 'pending'
+            ? raw.status
+            : 'pending',
+        total,
+        items,
+        questionResponse:
+          typeof raw.questionResponse === 'string'
+            ? raw.questionResponse
+            : raw.questionResponse != null
+            ? String(raw.questionResponse)
+            : null,
+        memo:
+          typeof raw.memo === 'string'
+            ? raw.memo
+            : raw.memo != null
+            ? String(raw.memo)
+            : null,
+        closed: Boolean(raw.closed),
+      };
+    },
+    [toIsoString]
+  );
+
+  const parseErrorResponse = useCallback(
+    async (response: Response): Promise<UiError> => {
+      try {
+        const data = (await response.json()) as Record<string, unknown>;
+        const message =
+          typeof data?.error === 'string'
+            ? data.error
+            : typeof data?.message === 'string'
+            ? data.message
+            : `HTTP ${response.status}`;
+
+        const debugInfo =
+          typeof data?.debug === 'string' ? data.debug : undefined;
+
+        return { message, debug: debugInfo };
+      } catch {
+        try {
+          const text = await response.text();
+          if (text) {
+            return { message: text };
+          }
+        } catch {
+          /* noop */
+        }
+        return { message: `HTTP ${response.status}` };
+      }
+    },
+    []
+  );
+
+  const toUiError = useCallback((err: unknown): UiError => {
+    if (err && typeof err === 'object' && 'message' in err) {
+      const message = String((err as { message?: unknown }).message);
+      const debugInfo =
+        'debug' in err && typeof (err as { debug?: unknown }).debug === 'string'
+          ? ((err as { debug?: string }).debug as string)
+          : undefined;
+      return { message, debug: debugInfo };
+    }
+    return { message: String(err) };
+  }, []);
 
   useEffect(() => {
     const liffId =
@@ -137,25 +314,34 @@ export default function ManagePage() {
     setOrdersLoading(true);
     setOrdersError(null);
     try {
-      const response = await fetch('/api/orders', {
+      const endpoint = debugMode ? '/api/orders?debug=1' : '/api/orders';
+      const response = await fetch(endpoint, {
         headers: {
           Authorization: `Bearer ${idToken}`,
         },
       });
 
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `HTTP ${response.status}`);
+        const errorInfo = await parseErrorResponse(response);
+        setOrdersError(errorInfo);
+        setOrders([]);
+        return;
       }
 
-      const body = (await response.json()) as { orders: OrderSummary[] };
-      setOrders(body.orders);
+      const body = (await response.json()) as {
+        items: Array<Record<string, unknown>>;
+      };
+
+      const normalized = body.items.map((item) => normalizeOrder(item));
+      setOrders(normalized);
+      setOrdersError(null);
     } catch (err) {
-      setOrdersError((err as Error).message);
+      setOrdersError(toUiError(err));
+      setOrders([]);
     } finally {
       setOrdersLoading(false);
     }
-  }, [idToken]);
+  }, [debugMode, idToken, normalizeOrder, parseErrorResponse, toUiError]);
 
   useEffect(() => {
     if (stage === 'authenticated' && idToken) {
@@ -209,7 +395,7 @@ export default function ManagePage() {
   const handleOrderAction = useCallback(
     async (orderId: string, action: OrderAction) => {
       if (!idToken) {
-        setActionError('認証情報が見つかりません');
+        setActionError({ message: '認証情報が見つかりません' });
         return;
       }
 
@@ -218,8 +404,11 @@ export default function ManagePage() {
       setActionError(null);
 
       try {
-        const response = await fetch(`/api/orders/${orderId}`, {
-          method: 'PATCH',
+        const endpoint = debugMode
+          ? `/api/orders/${orderId}?debug=1`
+          : `/api/orders/${orderId}`;
+        const response = await fetch(endpoint, {
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${idToken}`,
@@ -228,13 +417,27 @@ export default function ManagePage() {
         });
 
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `HTTP ${response.status}`);
+          const errorInfo = await parseErrorResponse(response);
+          setActionError(errorInfo);
+          return;
         }
 
-        const body = (await response.json()) as { order: OrderSummary };
+        const body = (await response.json()) as {
+          item?: Record<string, unknown>;
+        };
+
+        if (!body.item || typeof body.item !== 'object') {
+          setActionError({ message: '更新結果の形式が不正です' });
+          return;
+        }
+
+        const normalized = normalizeOrder({
+          id: typeof body.item.id === 'string' ? body.item.id : orderId,
+          ...body.item,
+        });
+
         setOrders((prev) =>
-          prev.map((order) => (order.id === orderId ? body.order : order))
+          prev.map((order) => (order.id === orderId ? normalized : order))
         );
         setActionMessage(
           action === 'accept'
@@ -242,12 +445,12 @@ export default function ManagePage() {
             : '注文をキャンセルしました'
         );
       } catch (err) {
-        setActionError((err as Error).message);
+        setActionError(toUiError(err));
       } finally {
         setActionState(null);
       }
     },
-    [idToken]
+    [debugMode, idToken, normalizeOrder, parseErrorResponse, toUiError]
   );
 
   return (
@@ -284,7 +487,23 @@ export default function ManagePage() {
               <h2>受注一覧</h2>
               {ordersLoading && <p>注文を読み込んでいます...</p>}
               {!ordersLoading && ordersError && (
-                <p style={{ color: 'crimson' }}>注文取得に失敗しました: {ordersError}</p>
+                <div style={{ color: 'crimson' }}>
+                  <p>
+                    注文取得に失敗しました: {ordersError.message}
+                  </p>
+                  {debugMode && ordersError.debug && (
+                    <pre
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        background: '#fee',
+                        padding: '0.5rem',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {ordersError.debug}
+                    </pre>
+                  )}
+                </div>
               )}
               {!ordersLoading && !ordersError && orders.length === 0 && (
                 <p>まだ注文はありません。</p>
@@ -293,7 +512,21 @@ export default function ManagePage() {
                 <p style={{ color: 'teal' }}>{actionMessage}</p>
               )}
               {actionError && (
-                <p style={{ color: 'crimson' }}>操作に失敗しました: {actionError}</p>
+                <div style={{ color: 'crimson' }}>
+                  <p>操作に失敗しました: {actionError.message}</p>
+                  {debugMode && actionError.debug && (
+                    <pre
+                      style={{
+                        whiteSpace: 'pre-wrap',
+                        background: '#fee',
+                        padding: '0.5rem',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {actionError.debug}
+                    </pre>
+                  )}
+                </div>
               )}
               {!ordersLoading && !ordersError && orders.length > 0 && (
                 <table>

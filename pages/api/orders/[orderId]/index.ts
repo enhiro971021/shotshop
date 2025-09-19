@@ -31,8 +31,8 @@ export default async function handler(
     return;
   }
 
-  if (req.method !== 'PATCH') {
-    res.setHeader('Allow', 'PATCH');
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
     res.status(405).json({ message: 'Method Not Allowed' });
     return;
   }
@@ -42,6 +42,8 @@ export default async function handler(
     res.status(400).json({ message: 'action は accept か cancel を指定してください' });
     return;
   }
+
+  const debug = req.query.debug === '1';
 
   try {
     const { shopId } = await authAndGetShopId(req.headers.authorization);
@@ -84,8 +86,15 @@ export default async function handler(
     res.status(200).json({ item: { id: updated.id, ...updated.data() } });
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 401;
-    res
-      .status(status)
-      .json({ error: (error as Error).message ?? String(error) });
+    const err = error as Error;
+    const body: Record<string, unknown> = {
+      error: err.message ?? String(error),
+    };
+
+    if (debug && typeof err.stack === 'string') {
+      body.debug = err.stack;
+    }
+
+    res.status(status).json(body);
   }
 }

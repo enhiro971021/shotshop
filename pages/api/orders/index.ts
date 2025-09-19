@@ -11,6 +11,8 @@ export default async function handler(
     return;
   }
 
+  const debug = req.query.debug === '1';
+
   try {
     const { shopId } = await authAndGetShopId(req.headers.authorization);
 
@@ -28,8 +30,15 @@ export default async function handler(
 
     res.status(200).json({ items });
   } catch (error) {
-    res
-      .status(401)
-      .json({ error: (error as Error).message ?? String(error) });
+    const err = error as Error;
+    const body: Record<string, unknown> = {
+      error: err.message ?? String(error),
+    };
+
+    if (debug && typeof err.stack === 'string') {
+      body.debug = err.stack;
+    }
+
+    res.status(401).json(body);
   }
 }
