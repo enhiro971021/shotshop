@@ -1,62 +1,28 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { FieldValue } from 'firebase-admin/firestore';
-import { authenticateRequest, UnauthorizedError } from '../../../../lib/line-auth';
-import { getFirestore } from '../../../../lib/firebase-admin';
-import { getShop } from '../../../../lib/shops';
-import type { OrderStatus, OrderSummary, ErrorResponse } from '../index';
+import { authAndGetShopId } from '../../../../lib/auth';
+import { db } from '../../../../lib/firebase-admin';
 
 const ALLOWED_ACTIONS = ['accept', 'cancel'] as const;
 
 type Action = (typeof ALLOWED_ACTIONS)[number];
 
-type UpdateResponse = {
-  order: OrderSummary;
-};
-
 function isAction(value: unknown): value is Action {
   return ALLOWED_ACTIONS.includes(value as Action);
 }
 
-class BadRequestError extends Error {
-  statusCode = 400;
-}
-
-async function toOrderSummary(
-  docRef: FirebaseFirestore.DocumentReference
-): Promise<OrderSummary> {
-  const snap = await docRef.get();
-  if (!snap.exists) {
-    throw new Error('注文が見つかりません');
+class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message);
   }
-
-  const data = snap.data() ?? {};
-  const items = (Array.isArray(data.items) ? data.items : []) as OrderSummary['items'];
-  const total =
-    typeof data.total === 'number'
-      ? data.total
-      : items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-
-  const createdAt =
-    data.createdAt && typeof data.createdAt.toDate === 'function'
-      ? data.createdAt.toDate().toISOString()
-      : null;
-
-  return {
-    id: snap.id,
-    createdAt,
-    buyerDisplayId: data.buyerDisplayId ?? 'unknown',
-    status: (data.status as OrderStatus) ?? 'pending',
-    total,
-    items,
-    questionResponse: data.questionResponse ?? null,
-    memo: data.memo ?? null,
-    closed: data.closed ?? false,
-  };
 }
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<UpdateResponse | ErrorResponse>
+  res: NextApiResponse
 ) {
   const { orderId } = req.query;
 
@@ -78,26 +44,24 @@ export default async function handler(
   }
 
   try {
-    const payload = await authenticateRequest(req);
-    const shop = await getShop(payload.sub);
-    const db = getFirestore();
+    const { shopId } = await authAndGetShopId(req.headers.authorization);
     const orderRef = db.collection('orders').doc(orderId);
 
     await db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(orderRef);
 
       if (!snapshot.exists) {
-        throw new BadRequestError('注文が見つかりません');
+        throw new ApiError(404, '注文が見つかりません');
       }
 
       const data = snapshot.data() ?? {};
 
-      if (data.shopId !== shop.shopId) {
-        throw new UnauthorizedError('この注文にアクセスできません');
+      if (data.shopId !== shopId) {
+        throw new ApiError(403, 'この注文にアクセスできません');
       }
 
       if (data.status !== 'pending') {
-        throw new BadRequestError('pending の注文のみ操作できます');
+        throw new ApiError(400, 'pending の注文のみ操作できます');
       }
 
       const updates: Partial<FirebaseFirestore.DocumentData> = {
@@ -116,19 +80,12 @@ export default async function handler(
       transaction.update(orderRef, updates);
     });
 
-    const order = await toOrderSummary(orderRef);
-    res.status(200).json({ order });
+    const updated = await orderRef.get();
+    res.status(200).json({ item: { id: updated.id, ...updated.data() } });
   } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      res.status(401).json({ message: error.message });
-      return;
-    }
-
-    if (error instanceof BadRequestError) {
-      res.status(error.statusCode).json({ message: error.message });
-      return;
-    }
-
-    res.status(500).json({ message: (error as Error).message });
+    const status = error instanceof ApiError ? error.status : 401;
+    res
+      .status(status)
+      .json({ error: (error as Error).message ?? String(error) });
   }
 }
