@@ -36,15 +36,16 @@ export async function listProducts(shopId: string) {
   const snapshot = await db
     .collection('products')
     .where('shopId', '==', shopId)
-    .where('isArchived', '!=', true)
-    .orderBy('isArchived')
-    .orderBy('createdAt', 'desc')
     .get();
 
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  })) as ProductRecord[];
+  return snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((product) => product.isArchived !== true)
+    .sort((a, b) => {
+      const createdAtA = (a.createdAt as FirebaseFirestore.Timestamp | undefined)?.toMillis?.() ?? 0;
+      const createdAtB = (b.createdAt as FirebaseFirestore.Timestamp | undefined)?.toMillis?.() ?? 0;
+      return createdAtB - createdAtA;
+    }) as ProductRecord[];
 }
 
 export async function getProduct(productId: string) {
