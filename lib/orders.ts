@@ -118,7 +118,50 @@ export function serializeOrderSnapshot(
     ? ((data as { items: unknown[] }).items as unknown[])
     : [];
 
-  const items = itemsRaw.map((item, index) => normalizeItem(item, index));
+  let items = itemsRaw.map((item, index) => normalizeItem(item, index));
+
+  if (items.length === 0) {
+    const singleItemCandidate = {
+      productId: (data as { productId?: unknown }).productId,
+      name:
+        (data as { productName?: unknown }).productName ??
+        (data as { product?: unknown }).product,
+      quantity: (data as { quantity?: unknown }).quantity,
+      qty: (data as { qty?: unknown }).qty,
+      unitPrice:
+        (data as { unitPrice?: unknown }).unitPrice ??
+        (data as { priceTaxIncl?: unknown }).priceTaxIncl,
+    };
+
+    const qtyValue =
+      typeof singleItemCandidate.quantity === 'number'
+        ? singleItemCandidate.quantity
+        : typeof singleItemCandidate.qty === 'number'
+        ? singleItemCandidate.qty
+        : Number(singleItemCandidate.quantity ?? singleItemCandidate.qty ?? 1);
+
+    const unitPriceValue =
+      typeof singleItemCandidate.unitPrice === 'number'
+        ? singleItemCandidate.unitPrice
+        : Number(singleItemCandidate.unitPrice ?? 0);
+
+    if (qtyValue || unitPriceValue || singleItemCandidate.productId) {
+      items = [
+        {
+          productId:
+            typeof singleItemCandidate.productId === 'string'
+              ? singleItemCandidate.productId
+              : undefined,
+          name:
+            typeof singleItemCandidate.name === 'string'
+              ? singleItemCandidate.name
+              : '商品1',
+          quantity: Number.isFinite(qtyValue) ? qtyValue : 1,
+          unitPrice: Number.isFinite(unitPriceValue) ? unitPriceValue : 0,
+        },
+      ];
+    }
+  }
 
   const totalRaw = (data as { total?: unknown }).total;
   const total =
@@ -156,8 +199,13 @@ export function serializeOrderSnapshot(
       typeof (data as { questionResponse?: unknown }).questionResponse ===
       'string'
         ? ((data as { questionResponse: string }).questionResponse as string)
+        : typeof (data as { questionAnswer?: unknown }).questionAnswer ===
+          'string'
+        ? ((data as { questionAnswer: string }).questionAnswer as string)
         : (data as { questionResponse?: unknown }).questionResponse != null
         ? String((data as { questionResponse?: unknown }).questionResponse)
+        : (data as { questionAnswer?: unknown }).questionAnswer != null
+        ? String((data as { questionAnswer?: unknown }).questionAnswer)
         : null,
     memo:
       typeof (data as { memo?: unknown }).memo === 'string'
