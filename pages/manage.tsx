@@ -96,6 +96,10 @@ export default function ManagePage() {
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState<UiError | null>(null);
+  const [orderDrafts, setOrderDrafts] = useState<
+    Record<string, { memo: string; closed: boolean }>
+  >({});
+  const [orderSaving, setOrderSaving] = useState<Record<string, boolean>>({});
   const [actionState, setActionState] = useState<{
     orderId: string;
     action: OrderAction;
@@ -531,6 +535,82 @@ export default function ManagePage() {
     }
   };
 
+  const handleOrderDraftChange = (
+    orderId: string,
+    field: 'memo' | 'closed',
+    value: string | boolean
+  ) => {
+    setOrderDrafts((prev) => ({
+      ...prev,
+      [orderId]: {
+        memo:
+          field === 'memo'
+            ? (value as string)
+            : prev[orderId]?.memo ?? '',
+        closed:
+          field === 'closed'
+            ? (value as boolean)
+            : prev[orderId]?.closed ?? false,
+      },
+    }));
+  };
+
+  const handleOrderMetaSave = async (orderId: string) => {
+    if (!idToken) {
+      return;
+    }
+    const draft = orderDrafts[orderId];
+    if (!draft) {
+      return;
+    }
+
+    setOrderSaving((prev) => ({ ...prev, [orderId]: true }));
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      const endpoint = debugMode
+        ? `/api/orders/${orderId}?debug=1`
+        : `/api/orders/${orderId}`;
+      const response = await fetch(endpoint, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ memo: draft.memo, closed: draft.closed }),
+      });
+
+      if (!response.ok) {
+        const err = await parseErrorResponse(response);
+        setActionError(err);
+        return;
+      }
+
+      const body = (await response.json()) as {
+        item?: OrderSummary;
+      };
+      if (!body.item) {
+        setActionError({ message: '更新結果の形式が不正です' });
+        return;
+      }
+      setOrders((prev) =>
+        prev.map((order) => (order.id === orderId ? body.item! : order))
+      );
+      setOrderDrafts((prev) => ({
+        ...prev,
+        [orderId]: {
+          memo: body.item?.memo ?? '',
+          closed: Boolean(body.item?.closed),
+        },
+      }));
+      setActionMessage('注文メモを保存しました');
+    } catch (err) {
+      setActionError(toUiError(err));
+    } finally {
+      setOrderSaving((prev) => ({ ...prev, [orderId]: false }));
+    }
+  };
+
   useEffect(() => {
     const liffId =
       process.env.NEXT_PUBLIC_MANAGE_LIFF_ID ?? process.env.NEXT_PUBLIC_LIFF_ID;
@@ -621,11 +701,21 @@ export default function ManagePage() {
         items?: OrderSummary[];
       };
 
-      setOrders(Array.isArray(body.items) ? body.items : []);
+      const ordersFetched = Array.isArray(body.items) ? body.items : [];
+      setOrders(ordersFetched);
+      const drafts: Record<string, { memo: string; closed: boolean }> = {};
+      ordersFetched.forEach((order) => {
+        drafts[order.id] = {
+          memo: order.memo ?? '',
+          closed: Boolean(order.closed),
+        };
+      });
+      setOrderDrafts(drafts);
       setOrdersError(null);
     } catch (err) {
       setOrdersError(toUiError(err));
       setOrders([]);
+      setOrderDrafts({});
     } finally {
       setOrdersLoading(false);
     }
@@ -725,6 +815,13 @@ export default function ManagePage() {
         setOrders((prev) =>
           prev.map((order) => (order.id === orderId ? body.item! : order))
         );
+        setOrderDrafts((prev) => ({
+          ...prev,
+          [orderId]: {
+            memo: body.item?.memo ?? '',
+            closed: Boolean(body.item?.closed),
+          },
+        }));
         setActionMessage(
           action === 'accept'
             ? '注文を確定しました'
@@ -1196,7 +1293,9 @@ export default function ManagePage() {
                       <th>購入者ID</th>
                       <th>商品</th>
                       <th>合計</th>
+                      <th>質問回答</th>
                       <th>ステータス</th>
+                      <th>メモ / 取引終了</th>
                       <th>操作</th>
                     </tr>
                   </thead>
@@ -1205,6 +1304,12 @@ export default function ManagePage() {
                       const isPending = order.status === 'pending';
                       const isProcessing =
                         actionState?.orderId === order.id;
+                      const draft =
+                        orderDrafts[order.id] ?? {
+                          memo: order.memo ?? '',
+                          closed: Boolean(order.closed),
+                        };
+                      const savingMeta = Boolean(orderSaving[order.id]);
 
                       return (
                         <tr key={order.id}>
@@ -1222,7 +1327,49 @@ export default function ManagePage() {
                             </ul>
                           </td>
                           <td>{formatCurrency(order.total)}</td>
+                          <td>
+                            {order.questionResponse
+                              ? order.questionResponse
+                              : '-'}
+                          </td>
                           <td>{order.status}</td>
+                          <td>
+                            <div style={{ display: 'grid', gap: '0.25rem' }}>
+                              <textarea
+                                value={draft.memo}
+                                rows={2}
+                                onChange={(event) =>
+                                  handleOrderDraftChange(
+                                    order.id,
+                                    'memo',
+                                    event.target.value
+                                  )
+                                }
+                                style={{ width: '100%' }}
+                              />
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={draft.closed}
+                                  onChange={(event) =>
+                                    handleOrderDraftChange(
+                                      order.id,
+                                      'closed',
+                                      event.target.checked
+                                    )
+                                  }
+                                />
+                                取引終了
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleOrderMetaSave(order.id)}
+                                disabled={savingMeta}
+                              >
+                                メモを保存
+                              </button>
+                            </div>
+                          </td>
                           <td>
                             {isPending ? (
                               <div style={{ display: 'flex', gap: '0.5rem' }}>
