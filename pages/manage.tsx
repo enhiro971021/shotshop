@@ -20,20 +20,19 @@ type SessionPayload = {
   };
 };
 
-type OrderItem = {
-  productId?: string;
-  name: string;
-  quantity: number;
-  unitPrice: number;
-};
-
 type OrderSummary = {
   id: string;
-  createdAt: string | null;
+  shopId: string | null;
+  createdAt: number | null;
   buyerDisplayId: string;
   status: 'pending' | 'accepted' | 'canceled';
   total: number;
-  items: OrderItem[];
+  items: Array<{
+    productId?: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+  }>;
   questionResponse?: string | null;
   memo?: string | null;
   closed?: boolean;
@@ -77,134 +76,16 @@ export default function ManagePage() {
     return new URLSearchParams(window.location.search).get('debug') === '1';
   }, []);
 
-  const toIsoString = useCallback((value: unknown): string | null => {
+  const formatTimestamp = useCallback((value: number | null) => {
     if (!value) {
-      return null;
+      return '-';
     }
-
-    if (typeof value === 'string') {
-      return value;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '-';
     }
-
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return new Date(value).toISOString();
-    }
-
-    if (
-      typeof value === 'object' &&
-      value !== null &&
-      'toDate' in value &&
-      typeof (value as { toDate?: () => Date }).toDate === 'function'
-    ) {
-      try {
-        return (value as { toDate: () => Date }).toDate().toISOString();
-      } catch {
-        return null;
-      }
-    }
-
-    if (
-      typeof value === 'object' &&
-      value !== null &&
-      '_seconds' in value &&
-      typeof (value as { _seconds?: unknown })._seconds === 'number'
-    ) {
-      const seconds = (value as { _seconds: number })._seconds;
-      const nanosCandidate =
-        value as Record<string, unknown> & { _nanoseconds?: unknown };
-      const nanos =
-        typeof nanosCandidate._nanoseconds === 'number'
-          ? nanosCandidate._nanoseconds
-          : 0;
-      const millis = seconds * 1000 + Math.floor(nanos / 1_000_000);
-      return new Date(millis).toISOString();
-    }
-
-    return null;
+    return date.toLocaleString('ja-JP');
   }, []);
-
-  const normalizeOrder = useCallback(
-    (raw: Record<string, unknown>): OrderSummary => {
-      const itemsRaw = Array.isArray(raw.items)
-        ? (raw.items as Array<Record<string, unknown>>)
-        : [];
-
-      const items: OrderItem[] = itemsRaw.map((item, index) => {
-        if (!item || typeof item !== 'object') {
-          return {
-            name: `商品${index + 1}`,
-            quantity: 0,
-            unitPrice: 0,
-          };
-        }
-
-        const quantityRaw = (item as { quantity?: unknown }).quantity;
-        const unitPriceRaw = (item as { unitPrice?: unknown }).unitPrice;
-
-        const quantity =
-          typeof quantityRaw === 'number'
-            ? quantityRaw
-            : Number(quantityRaw ?? 0);
-
-        const unitPrice =
-          typeof unitPriceRaw === 'number'
-            ? unitPriceRaw
-            : Number(unitPriceRaw ?? 0);
-
-        return {
-          productId:
-            typeof item.productId === 'string' ? item.productId : undefined,
-          name:
-            typeof item.name === 'string'
-              ? item.name
-              : `商品${index + 1}`,
-          quantity: Number.isFinite(quantity) ? quantity : 0,
-          unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
-        };
-      });
-
-      const totalRaw = raw.total;
-      const total =
-        typeof totalRaw === 'number'
-          ? totalRaw
-          : items.reduce((acc, item) => acc + item.unitPrice * item.quantity, 0);
-
-      return {
-        id: typeof raw.id === 'string' ? raw.id : 'unknown',
-        createdAt: toIsoString(raw.createdAt),
-        buyerDisplayId:
-          typeof raw.buyerDisplayId === 'string'
-            ? raw.buyerDisplayId
-            : 'unknown',
-        status:
-          raw.status === 'accepted' ||
-          raw.status === 'canceled' ||
-          raw.status === 'pending'
-            ? raw.status
-            : 'pending',
-        total,
-        items,
-        questionResponse:
-          typeof raw.questionResponse === 'string'
-            ? raw.questionResponse
-            : raw.questionResponse != null
-            ? String(raw.questionResponse)
-            : null,
-        memo:
-          typeof raw.memo === 'string'
-            ? raw.memo
-            : raw.memo != null
-            ? String(raw.memo)
-            : null,
-        closed: Boolean(raw.closed),
-      };
-    },
-    [toIsoString]
-  );
 
   const parseErrorResponse = useCallback(
     async (response: Response): Promise<UiError> => {
@@ -335,11 +216,10 @@ export default function ManagePage() {
       }
 
       const body = (await response.json()) as {
-        items: Array<Record<string, unknown>>;
+        items?: OrderSummary[];
       };
 
-      const normalized = body.items.map((item) => normalizeOrder(item));
-      setOrders(normalized);
+      setOrders(Array.isArray(body.items) ? body.items : []);
       setOrdersError(null);
     } catch (err) {
       setOrdersError(toUiError(err));
@@ -347,7 +227,7 @@ export default function ManagePage() {
     } finally {
       setOrdersLoading(false);
     }
-  }, [debugMode, idToken, normalizeOrder, parseErrorResponse, toUiError]);
+  }, [debugMode, idToken, parseErrorResponse, toUiError]);
 
   useEffect(() => {
     if (stage === 'authenticated' && idToken) {
@@ -429,21 +309,16 @@ export default function ManagePage() {
         }
 
         const body = (await response.json()) as {
-          item?: Record<string, unknown>;
+          item?: OrderSummary;
         };
 
-        if (!body.item || typeof body.item !== 'object') {
+        if (!body.item) {
           setActionError({ message: '更新結果の形式が不正です' });
           return;
         }
 
-        const normalized = normalizeOrder({
-          id: typeof body.item.id === 'string' ? body.item.id : orderId,
-          ...body.item,
-        });
-
         setOrders((prev) =>
-          prev.map((order) => (order.id === orderId ? normalized : order))
+          prev.map((order) => (order.id === orderId ? body.item! : order))
         );
         setActionMessage(
           action === 'accept'
@@ -456,7 +331,7 @@ export default function ManagePage() {
         setActionState(null);
       }
     },
-    [debugMode, idToken, normalizeOrder, parseErrorResponse, toUiError]
+    [debugMode, idToken, parseErrorResponse, toUiError]
   );
 
   return (
@@ -556,7 +431,7 @@ export default function ManagePage() {
                       return (
                         <tr key={order.id}>
                           <td>{order.id}</td>
-                          <td>{order.createdAt ?? '-'}</td>
+                          <td>{formatTimestamp(order.createdAt)}</td>
                           <td>{order.buyerDisplayId}</td>
                           <td>
                             <ul>
