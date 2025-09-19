@@ -387,6 +387,9 @@ export async function updateOrderStatus(
       throw new Error('注文の商品情報が不正です');
     }
 
+    if (!item.productId) {
+      throw new Error('商品情報に productId がありません');
+    }
     const productRef = db.collection('products').doc(item.productId);
     const productSnap = await tx.get(productRef);
     if (!productSnap.exists) {
