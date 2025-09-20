@@ -378,8 +378,8 @@ export async function updateOrderStatus(
       throw new Error('この注文にアクセスできません');
     }
 
-    if (order.status !== 'pending') {
-      throw new Error('pending の注文のみ操作できます');
+    if (order.status === 'canceled') {
+      throw new Error('この注文はすでにキャンセルされています');
     }
 
     const item = order.items?.[0];
@@ -397,8 +397,13 @@ export async function updateOrderStatus(
     }
     const product = productSnap.data() as ProductRecord;
 
+    const currentInventory = Number(product.inventory ?? 0);
+
     if (action === 'accept') {
-      const nextInventory = product.inventory - item.quantity;
+      if (order.status !== 'pending') {
+        throw new Error('この注文は確定できません');
+      }
+      const nextInventory = currentInventory - item.quantity;
       if (nextInventory < 0) {
         throw new Error('在庫が不足しています');
       }
@@ -412,11 +417,26 @@ export async function updateOrderStatus(
         updatedAt: FieldValue.serverTimestamp(),
       });
     } else {
-      tx.update(orderRef, {
-        status: 'canceled',
-        canceledAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      const now = FieldValue.serverTimestamp();
+      if (order.status === 'pending') {
+        tx.update(orderRef, {
+          status: 'canceled',
+          canceledAt: now,
+          updatedAt: now,
+        });
+      } else if (order.status === 'accepted') {
+        tx.update(productRef, {
+          inventory: currentInventory + item.quantity,
+          updatedAt: now,
+        });
+        tx.update(orderRef, {
+          status: 'canceled',
+          canceledAt: now,
+          updatedAt: now,
+        });
+      } else {
+        throw new Error('この注文はキャンセルできません');
+      }
     }
 
     return {

@@ -108,8 +108,6 @@ export default function ManagePage() {
   } | null>(null);
   const [actionError, setActionError] = useState<UiError | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [liff, setLiff] =
-    useState<(typeof import('@line/liff'))['default'] | null>(null);
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [productDrafts, setProductDrafts] = useState<Record<string, ProductDraft>>({});
   const [productsLoading, setProductsLoading] = useState(false);
@@ -652,7 +650,6 @@ export default function ManagePage() {
       setStage('initializing');
       try {
         const liffModule = (await import('@line/liff')).default;
-        setLiff(liffModule);
 
         await liffModule.init({ liffId });
 
@@ -756,13 +753,6 @@ export default function ManagePage() {
     }
   }, [stage, idToken, loadOrders, loadProducts, loadShop]);
 
-  const handleLogout = () => {
-    if (liff) {
-      liff.logout();
-      window.location.reload();
-    }
-  };
-
   const sessionRows = useMemo(() => {
     if (!session) {
       return [] as Array<{ label: string; value: string }>;
@@ -863,6 +853,25 @@ export default function ManagePage() {
     [debugMode, idToken, parseErrorResponse, toUiError]
   );
 
+  const handleOrderActionWithConfirm = useCallback(
+    (orderId: string, action: OrderAction) => {
+      const confirmationMessage =
+        action === 'accept'
+          ? '購入者に注文確定の通知が送信されます。続行しますか？'
+          : '購入者にキャンセル通知が送信されます。続行しますか？';
+
+      if (typeof window !== 'undefined') {
+        const confirmed = window.confirm(confirmationMessage);
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      void handleOrderAction(orderId, action);
+    },
+    [handleOrderAction]
+  );
+
   return (
     <>
       <Head>
@@ -911,15 +920,6 @@ export default function ManagePage() {
                   </Fragment>
                 ))}
               </dl>
-              <div className={styles.buttonRow}>
-                <button
-                  type="button"
-                  className={styles.outlineButton}
-                  onClick={handleLogout}
-                >
-                  ログアウト
-                </button>
-              </div>
             </section>
 
             <section className={styles.card}>
@@ -1325,6 +1325,17 @@ export default function ManagePage() {
               ) : (
                 <div className={styles.tableWrapper}>
                   <table className={styles.table}>
+                    <colgroup>
+                      <col className={styles.colOrderId} />
+                      <col className={styles.colDate} />
+                      <col className={styles.colBuyerId} />
+                      <col className={styles.colProducts} />
+                      <col className={styles.colTotal} />
+                      <col className={styles.colQuestion} />
+                      <col className={styles.colStatus} />
+                      <col className={styles.colMemo} />
+                      <col className={styles.colActions} />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>注文ID</th>
@@ -1340,7 +1351,9 @@ export default function ManagePage() {
                     </thead>
                     <tbody>
                       {orders.map((order) => {
-                        const isPending = order.status === 'pending';
+                        const canAccept = order.status === 'pending';
+                        const canCancel =
+                          order.status === 'pending' || order.status === 'accepted';
                         const isProcessing =
                           actionState?.orderId === order.id;
                         const draft =
@@ -1407,34 +1420,44 @@ export default function ManagePage() {
                               </div>
                             </td>
                             <td>
-                              {isPending ? (
+                              {canAccept || canCancel ? (
                                 <div className={styles.inlineButtons}>
-                                  <button
-                                    type="button"
-                                    className={styles.primaryButton}
-                                    onClick={() =>
-                                      handleOrderAction(order.id, 'accept')
-                                    }
-                                    disabled={isProcessing}
-                                  >
-                                    {isProcessing &&
-                                    actionState?.action === 'accept'
-                                      ? '処理中...'
-                                      : '注文確定'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={styles.outlineButton}
-                                    onClick={() =>
-                                      handleOrderAction(order.id, 'cancel')
-                                    }
-                                    disabled={isProcessing}
-                                  >
-                                    {isProcessing &&
-                                    actionState?.action === 'cancel'
-                                      ? '処理中...'
-                                      : 'キャンセル'}
-                                  </button>
+                                  {canAccept && (
+                                    <button
+                                      type="button"
+                                      className={styles.primaryButton}
+                                      onClick={() =>
+                                        handleOrderActionWithConfirm(
+                                          order.id,
+                                          'accept'
+                                        )
+                                      }
+                                      disabled={isProcessing}
+                                    >
+                                      {isProcessing &&
+                                      actionState?.action === 'accept'
+                                        ? '処理中...'
+                                        : '注文確定'}
+                                    </button>
+                                  )}
+                                  {canCancel && (
+                                    <button
+                                      type="button"
+                                      className={styles.outlineButton}
+                                      onClick={() =>
+                                        handleOrderActionWithConfirm(
+                                          order.id,
+                                          'cancel'
+                                        )
+                                      }
+                                      disabled={isProcessing}
+                                    >
+                                      {isProcessing &&
+                                      actionState?.action === 'cancel'
+                                        ? '処理中...'
+                                        : 'キャンセル'}
+                                    </button>
+                                  )}
                                 </div>
                               ) : (
                                 <span>-</span>

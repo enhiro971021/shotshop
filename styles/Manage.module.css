@@ -301,6 +301,42 @@
   font-size: 14px;
 }
 
+.colOrderId {
+  width: 140px;
+}
+
+.colDate {
+  width: 160px;
+}
+
+.colBuyerId {
+  width: 140px;
+}
+
+.colProducts {
+  min-width: 200px;
+}
+
+.colTotal {
+  width: 120px;
+}
+
+.colQuestion {
+  min-width: 220px;
+}
+
+.colStatus {
+  width: 120px;
+}
+
+.colMemo {
+  min-width: 260px;
+}
+
+.colActions {
+  width: 180px;
+}
+
 .table thead tr {
   background: rgba(148, 163, 184, 0.1);
 }
