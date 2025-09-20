@@ -36,19 +36,10 @@ export default async function handler(
 
     if (req.method === 'PUT') {
       const body = req.body ?? {};
-      if (shop.status === 'open') {
-        const allowed: Record<string, unknown> = {};
-        if (body.inventory != null) {
-          allowed.inventory = body.inventory;
-        }
-        if (Object.keys(allowed).length === 0) {
-          res
-            .status(400)
-            .json({ message: '公開中は在庫数のみ編集できます' });
-          return;
-        }
-        const product = await updateProduct(shopId, productId, allowed);
-        res.status(200).json({ item: product });
+      if (shop.status !== 'preparing') {
+        res
+          .status(403)
+          .json({ message: 'ショップ公開中は商品を編集できません' });
         return;
       }
 
@@ -58,6 +49,12 @@ export default async function handler(
     }
 
     if (req.method === 'DELETE') {
+      if (shop.status !== 'preparing') {
+        res
+          .status(403)
+          .json({ message: 'ショップ公開中は商品を編集できません' });
+        return;
+      }
       await archiveProduct(shopId, productId);
       res.status(204).end();
       return;

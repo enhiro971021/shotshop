@@ -124,6 +124,7 @@ export default function ManagePage() {
     questionEnabled: false,
     questionText: '',
   });
+  const shopIsEditable = (shopDetail ?? session?.shop)?.status !== 'open';
 
   const debugMode = useMemo(() => {
     if (typeof window === 'undefined') {
@@ -374,6 +375,12 @@ export default function ManagePage() {
     if (!idToken) {
       return;
     }
+    if (!shopIsEditable) {
+      setProductError({
+        message: 'ショップを準備中に切り替えてから商品を追加してください',
+      });
+      return;
+    }
     setProductError(null);
     setProductSaving((prev) => ({ ...prev, __new__: true }));
     try {
@@ -436,6 +443,13 @@ export default function ManagePage() {
 
     const draft = productDrafts[productId];
     if (!draft) {
+      return;
+    }
+
+    if (!shopIsEditable) {
+      setProductError({
+        message: 'ショップを準備中に切り替えてから商品を編集してください',
+      });
       return;
     }
 
@@ -513,6 +527,12 @@ export default function ManagePage() {
 
   const handleProductDelete = async (productId: string) => {
     if (!idToken) {
+      return;
+    }
+    if (!shopIsEditable) {
+      setProductError({
+        message: 'ショップを準備中に切り替えてから商品を編集してください',
+      });
       return;
     }
     if (!window.confirm('この商品を非表示にしますか？')) {
@@ -984,7 +1004,9 @@ export default function ManagePage() {
                 </div>
               )}
               {shopDetail?.status === 'open' && (
-                <p className={styles.note}>ショップ公開中でも新しい商品を追加できますが、既存商品の編集は在庫数のみです。</p>
+                <p className={styles.note}>
+                  ショップ公開中は商品の追加・編集ができません。準備中に切り替えてから操作してください。
+                </p>
               )}
               <form className={styles.productForm} onSubmit={handleCreateProductSubmit}>
                 <h3 className={styles.subheading}>商品を追加</h3>
@@ -999,6 +1021,7 @@ export default function ManagePage() {
                         handleNewProductChange('name', event.target.value)
                       }
                       required
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                   </label>
                   <label className={styles.field}>
@@ -1010,6 +1033,7 @@ export default function ManagePage() {
                         handleNewProductChange('description', event.target.value)
                       }
                       rows={3}
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                   </label>
                   <label className={styles.field}>
@@ -1023,6 +1047,7 @@ export default function ManagePage() {
                         handleNewProductChange('price', event.target.value)
                       }
                       required
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                   </label>
                   <label className={styles.field}>
@@ -1036,6 +1061,7 @@ export default function ManagePage() {
                         handleNewProductChange('inventory', event.target.value)
                       }
                       required
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                   </label>
                   <label className={styles.field}>
@@ -1047,6 +1073,7 @@ export default function ManagePage() {
                       onChange={(event) =>
                         handleNewProductChange('imageUrl', event.target.value)
                       }
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                   </label>
                   <label className={`${styles.field} ${styles.checkboxField}`}>
@@ -1059,6 +1086,7 @@ export default function ManagePage() {
                           event.target.checked
                         )
                       }
+                      disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                     />
                     <span>購入時質問を有効にする</span>
                   </label>
@@ -1075,20 +1103,21 @@ export default function ManagePage() {
                           )
                         }
                         rows={2}
+                        disabled={!shopIsEditable || Boolean(productSaving.__new__)}
                       />
                     </label>
                   )}
                 </div>
-                <div className={styles.buttonRow}>
-                  <button
-                    type="submit"
-                    className={styles.primaryButton}
-                    disabled={Boolean(productSaving.__new__)}
-                  >
-                    商品を追加
-                  </button>
-                </div>
-              </form>
+              <div className={styles.buttonRow}>
+                <button
+                  type="submit"
+                  className={styles.primaryButton}
+                  disabled={!shopIsEditable || Boolean(productSaving.__new__)}
+                >
+                  商品を追加
+                </button>
+              </div>
+            </form>
 
               {productsLoading ? (
                 <p>商品を読み込んでいます...</p>
@@ -1109,7 +1138,7 @@ export default function ManagePage() {
                       };
 
                     const saving = Boolean(productSaving[product.id]);
-                    const disableFields = shopDetail?.status === 'open';
+                    const disableFields = !shopIsEditable;
 
                     return (
                       <article key={product.id} className={styles.productCard}>
@@ -1181,7 +1210,7 @@ export default function ManagePage() {
                               type="number"
                               min={0}
                               value={draft.inventory}
-                              disabled={saving}
+                              disabled={saving || disableFields}
                               onChange={(event) =>
                                 handleProductDraftChange(
                                   product.id,
@@ -1246,7 +1275,7 @@ export default function ManagePage() {
                             type="button"
                             className={styles.secondaryButton}
                             onClick={() => handleProductSave(product.id)}
-                            disabled={saving}
+                            disabled={saving || disableFields}
                           >
                             保存
                           </button>
@@ -1254,7 +1283,7 @@ export default function ManagePage() {
                             type="button"
                             className={styles.destructiveButton}
                             onClick={() => handleProductDelete(product.id)}
-                            disabled={saving}
+                            disabled={saving || disableFields}
                           >
                             非表示にする
                           </button>
