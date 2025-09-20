@@ -43,8 +43,8 @@ export async function saveBuyerSession(
 ) {
   await collection.doc(buyerUserId).set(
     {
-      buyerUserId,
       ...session,
+      buyerUserId,
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
