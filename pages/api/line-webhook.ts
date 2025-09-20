@@ -3,6 +3,7 @@ import type {
   Message,
   MessageEvent,
   PostbackEvent,
+  QuickReplyItem,
   WebhookEvent,
 } from '@line/bot-sdk';
 import {
@@ -290,10 +291,10 @@ function buildQuantityPromptMessage(
   shop: ActiveShop,
   product: Awaited<ReturnType<typeof listProducts>>[number]
 ) {
-  const quickReplyItems = [1, 2, 3, 4, 5].map((num) => ({
-    type: 'action' as const,
+  const quickReplyItems: QuickReplyItem[] = [1, 2, 3, 4, 5].map((num) => ({
+    type: 'action',
     action: {
-      type: 'postback' as const,
+      type: 'postback',
       label: `${num}`,
       data: `action=buyer-set-quantity&quantity=${num}&productId=${encodeURIComponent(
         product.id
