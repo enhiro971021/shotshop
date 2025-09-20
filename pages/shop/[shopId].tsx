@@ -1,12 +1,14 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import {
+  Fragment,
   FormEvent,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from 'react';
+import styles from '../../styles/Shop.module.css';
 
 const INITIAL_LIFF_ERROR = 'LIFFの初期化に失敗しました';
 
@@ -46,6 +48,7 @@ export default function ShopPage() {
   const [questionResponse, setQuestionResponse] = useState('');
   const [placingOrder, setPlacingOrder] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const questionRequired = useMemo(() => {
     const product = products.find((item) => item.id === selectedProductId);
@@ -138,6 +141,7 @@ export default function ShopPage() {
 
     setPlacingOrder(true);
     setMessage(null);
+    setFormError(null);
     try {
       const response = await fetch('/api/public/orders', {
         method: 'POST',
@@ -162,7 +166,7 @@ export default function ShopPage() {
       setQuestionResponse('');
       await fetchShop();
     } catch (err) {
-      setError({ message: String(err) });
+      setFormError(String(err));
     } finally {
       setPlacingOrder(false);
     }
@@ -170,28 +174,34 @@ export default function ShopPage() {
 
   if (loading) {
     return (
-      <main>
-        <p>読み込み中...</p>
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <p className={styles.note}>読み込み中...</p>
+        </div>
       </main>
     );
   }
 
   if (error) {
     return (
-      <main>
-        <h1>ショップ表示エラー</h1>
-        <p style={{ color: 'crimson' }}>{error.message}</p>
-        {error.debug && (
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{error.debug}</pre>
-        )}
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <div className={styles.errorCard}>
+            <h1>ショップ表示エラー</h1>
+            <p>{error.message}</p>
+            {error.debug && <pre>{error.debug}</pre>}
+          </div>
+        </div>
       </main>
     );
   }
 
   if (!shop) {
     return (
-      <main>
-        <p>ショップ情報が見つかりません。</p>
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <p className={styles.note}>ショップ情報が見つかりません。</p>
+        </div>
       </main>
     );
   }
@@ -203,82 +213,137 @@ export default function ShopPage() {
       <Head>
         <title>{shop.name} | ショップ</title>
       </Head>
-      <main>
-        <h1>{shop.name}</h1>
-        <section>
-          <h2>ご案内</h2>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{shop.purchaseMessage}</p>
-        </section>
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <section className={styles.hero}>
+            <span className={styles.badge}>LINE Mini Shop</span>
+            <h1>{shop.name}</h1>
+            <p className={styles.heroDescription}>
+              {shop.purchaseMessage.split('\n').map((line, index) => (
+                <Fragment key={`hero-line-${index}`}>
+                  {line}
+                  <br />
+                </Fragment>
+              ))}
+            </p>
+          </section>
 
-        {products.length === 0 ? (
-          <p>現在、購入可能な商品はありません。</p>
-        ) : (
-          <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '1rem' }}>
-            <section>
-              <h2>商品を選ぶ</h2>
-              <select
-                value={selectedProductId}
-                onChange={(event) => {
-                  setSelectedProductId(event.target.value);
-                  setQuantity(1);
-                  setQuestionResponse('');
-                }}
-                style={{ width: '100%', padding: '0.5rem' }}
-              >
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name}（{product.price.toLocaleString()} 円）
-                  </option>
-                ))}
-              </select>
-              {selectedProduct && (
-                <div style={{ marginTop: '0.5rem' }}>
-                  {selectedProduct.imageUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={selectedProduct.imageUrl}
-                      alt={selectedProduct.name}
-                      style={{ maxWidth: '100%', borderRadius: '8px' }}
-                    />
-                  )}
-                  <p>{selectedProduct.description}</p>
-                  <p>在庫：{selectedProduct.inventory}</p>
+          {products.length === 0 ? (
+            <div className={styles.emptyCard}>
+              <h2>準備中の商品はありません</h2>
+              <p>出店者の公開をお待ちください。</p>
+            </div>
+          ) : (
+            <form className={styles.form} onSubmit={handleSubmit}>
+              <section className={styles.formSection}>
+                <h2>商品を選択</h2>
+                <div className={styles.productGrid}>
+                  {products.map((product) => {
+                    const isSelected = selectedProductId === product.id;
+                    return (
+                      <label
+                        key={product.id}
+                        className={`${styles.productCard} ${
+                          isSelected ? styles.productCardSelected : ''
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="product"
+                          value={product.id}
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedProductId(product.id);
+                            setQuantity(1);
+                            setQuestionResponse('');
+                          }}
+                          className={styles.productRadio}
+                        />
+                        <div className={styles.productBody}>
+                          <div className={styles.productInfo}>
+                            <h3>{product.name}</h3>
+                            <p>{product.description || '説明はありません'}</p>
+                          </div>
+                          <div className={styles.productMetaRow}>
+                            <span className={styles.priceTag}>
+                              {product.price.toLocaleString()} 円
+                            </span>
+                            <span className={styles.inventoryTag}>
+                              在庫 {product.inventory}
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
-              )}
-            </section>
-
-            <section>
-              <h2>数量</h2>
-              <input
-                type="number"
-                min={1}
-                max={selectedProduct?.inventory ?? 99}
-                value={quantity}
-                onChange={(event) => setQuantity(Number(event.target.value))}
-                style={{ width: '100px' }}
-              />
-            </section>
-
-            {questionRequired && (
-              <section>
-                <h2>購入時の質問</h2>
-                <textarea
-                  value={questionResponse}
-                  onChange={(event) => setQuestionResponse(event.target.value)}
-                  required
-                  rows={3}
-                  style={{ width: '100%' }}
-                />
               </section>
-            )}
 
-            {message && <p style={{ color: 'teal' }}>{message}</p>}
+              <section className={styles.formSection}>
+                <h2>数量の指定</h2>
+                <div className={styles.quantityRow}>
+                  <button
+                    type="button"
+                    className={styles.quantityButton}
+                    onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                    disabled={quantity <= 1}
+                  >
+                    -
+                  </button>
+                  <input
+                    className={styles.quantityInput}
+                    type="number"
+                    min={1}
+                    max={selectedProduct?.inventory ?? 99}
+                    value={quantity}
+                    onChange={(event) =>
+                      setQuantity(Number(event.target.value))
+                    }
+                  />
+                  <button
+                    type="button"
+                    className={styles.quantityButton}
+                    onClick={() =>
+                      setQuantity((prev) =>
+                        Math.min((selectedProduct?.inventory ?? 99), prev + 1)
+                      )
+                    }
+                    disabled={quantity >= (selectedProduct?.inventory ?? 99)}
+                  >
+                    +
+                  </button>
+                </div>
+              </section>
 
-            <button type="submit" disabled={placingOrder}>
-              {placingOrder ? '送信中...' : '注文を確定する'}
-            </button>
-          </form>
-        )}
+              {questionRequired && (
+                <section className={styles.formSection}>
+                  <h2>購入時の質問</h2>
+                  <textarea
+                    className={styles.textarea}
+                    value={questionResponse}
+                    onChange={(event) => setQuestionResponse(event.target.value)}
+                    required
+                    rows={3}
+                    placeholder="回答をご記入ください"
+                  />
+                </section>
+              )}
+
+              {formError && (
+                <p className={styles.errorText}>{formError}</p>
+              )}
+              {message && <p className={styles.successText}>{message}</p>}
+
+              <button
+                type="submit"
+                className={styles.primaryButton}
+                disabled={placingOrder}
+              >
+                {placingOrder ? '送信中…' : '注文を確定する'}
+              </button>
+            </form>
+          )}
+        </div>
       </main>
     </>
   );

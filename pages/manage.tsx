@@ -1,11 +1,13 @@
 import Head from 'next/head';
 import {
   Fragment,
+  FormEvent,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from 'react';
+import styles from '../styles/Manage.module.css';
 
 type SessionPayload = {
   userId: string;
@@ -361,6 +363,11 @@ export default function ManagePage() {
       questionEnabled: false,
       questionText: '',
     });
+  };
+
+  const handleCreateProductSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void handleCreateProduct();
   };
 
   const handleCreateProduct = async () => {
@@ -841,576 +848,580 @@ export default function ManagePage() {
       <Head>
         <title>ショップ管理</title>
       </Head>
-      <main>
-        <h1>ショップ管理</h1>
-        {stage === 'idle' && <p>LIFF の初期化を待機しています...</p>}
-        {stage === 'initializing' && <p>LINE に接続中です...</p>}
-        {stage === 'verifying' && <p>セッションを確認しています...</p>}
-        {stage === 'error' && (
-          <p style={{ color: 'crimson' }}>
-            認証に失敗しました: {error ?? '原因不明のエラー'}
-          </p>
-        )}
+      <main className={styles.container}>
+        <div className={styles.content}>
+          <h1 className={styles.pageTitle}>ショップ管理</h1>
+          {stage === 'idle' && <p>LIFF の初期化を待機しています...</p>}
+          {stage === 'initializing' && <p>LINE に接続中です...</p>}
+          {stage === 'verifying' && <p>セッションを確認しています...</p>}
+          {stage === 'error' && (
+            <p className={styles.errorText}>
+              認証に失敗しました: {error ?? '原因不明のエラー'}
+            </p>
+          )}
         {stage === 'authenticated' && session && (
-          <section>
-            <p>認証が完了しました。受注管理の準備が整いました。</p>
-            <dl>
-              {sessionRows.map((row) => (
-                <Fragment key={row.label}>
-                  <dt>{row.label}</dt>
-                  <dd>{row.value}</dd>
-                </Fragment>
-              ))}
-            </dl>
-            <button type="button" onClick={handleLogout}>
-              ログアウト
-            </button>
+          <div className={styles.stack}>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.sectionTitle}>アカウント概要</h2>
+                  <p className={styles.sectionDescription}>
+                    LINE アカウントとショップの基本情報です。
+                  </p>
+                </div>
+                { (shopDetail ?? session.shop) && (
+                  <span
+                    className={
+                      (shopDetail ?? session.shop)?.status === 'open'
+                        ? styles.badgeLive
+                        : styles.badgeDraft
+                    }
+                  >
+                    {(shopDetail ?? session.shop)?.status === 'open'
+                      ? '公開中'
+                      : '準備中'}
+                  </span>
+                )}
+              </div>
+              <dl className={styles.metaList}>
+                {sessionRows.map((row) => (
+                  <Fragment key={row.label}>
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.outlineButton}
+                  onClick={handleLogout}
+                >
+                  ログアウト
+                </button>
+              </div>
+            </section>
 
-            <section>
-              <h2>ショップ設定</h2>
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.sectionTitle}>ショップ設定</h2>
+                  <p className={styles.sectionDescription}>
+                    店舗名と購入時メッセージを更新できます。
+                  </p>
+                </div>
+              </div>
               {shopError && (
-                <div style={{ color: 'crimson' }}>
+                <div className={styles.errorBanner}>
                   <p>更新に失敗しました: {shopError.message}</p>
-                  {debugMode && shopError.debug && (
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        background: '#fee',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {shopError.debug}
-                    </pre>
-                  )}
+                  {debugMode && shopError.debug && <pre>{shopError.debug}</pre>}
                 </div>
               )}
-              {shopMessage && <p style={{ color: 'teal' }}>{shopMessage}</p>}
-              <div style={{ display: 'grid', gap: '0.5rem', marginBottom: '1rem' }}>
-                <label>
-                  店舗名
+              {shopMessage && (
+                <p className={styles.successText}>{shopMessage}</p>
+              )}
+              <div className={styles.formGrid}>
+                <label className={styles.field}>
+                  <span>店舗名</span>
                   <input
+                    className={styles.input}
                     type="text"
                     value={shopForm.name}
                     onChange={(event) =>
                       handleShopInputChange('name', event.target.value)
                     }
-                    disabled={shopSaving || shopDetail?.status === 'open'}
-                    style={{ width: '100%' }}
+                    disabled={shopSaving}
                   />
                 </label>
-                <label>
-                  購入時メッセージ
+                <label className={styles.field}>
+                  <span>購入時メッセージ</span>
                   <textarea
+                    className={styles.textarea}
                     value={shopForm.purchaseMessage}
                     onChange={(event) =>
                       handleShopInputChange('purchaseMessage', event.target.value)
                     }
-                    disabled={shopSaving || shopDetail?.status === 'open'}
                     rows={4}
-                    style={{ width: '100%' }}
+                    disabled={shopSaving}
                   />
                 </label>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    onClick={handleShopSave}
-                    disabled={
-                      shopSaving || shopDetail?.status === 'open' || !shopForm.name
-                    }
-                  >
-                    保存
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShopStatusToggle}
-                    disabled={shopSaving}
-                  >
-                    {shopDetail?.status === 'open'
-                      ? '準備中に戻す'
-                      : '公開する'}
-                  </button>
-                </div>
+              </div>
+              <div className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.primaryButton}
+                  onClick={handleShopSave}
+                  disabled={shopSaving || !shopForm.name}
+                >
+                  保存
+                </button>
+                <button
+                  type="button"
+                  className={styles.outlineButton}
+                  onClick={handleShopStatusToggle}
+                  disabled={shopSaving}
+                >
+                  {shopDetail?.status === 'open'
+                    ? '準備中に戻す'
+                    : '公開する'}
+                </button>
               </div>
             </section>
 
-            <section>
-              <h2>商品管理</h2>
-              {productsLoading && <p>商品を読み込んでいます...</p>}
+            <section className={styles.card}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.sectionTitle}>商品管理</h2>
+                  <p className={styles.sectionDescription}>
+                    商品の追加と在庫調整を行います。
+                  </p>
+                </div>
+              </div>
               {productError && (
-                <div style={{ color: 'crimson' }}>
+                <div className={styles.errorBanner}>
                   <p>商品操作に失敗しました: {productError.message}</p>
-                  {debugMode && productError.debug && (
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        background: '#fee',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {productError.debug}
-                    </pre>
-                  )}
+                  {debugMode && productError.debug && <pre>{productError.debug}</pre>}
                 </div>
               )}
-
               {shopDetail?.status === 'open' && (
-                <p style={{ color: '#666' }}>
-                  ショップ公開中は在庫数のみ編集できます。
-                </p>
+                <p className={styles.note}>ショップ公開中でも新しい商品を追加できますが、既存商品の編集は在庫数のみです。</p>
               )}
-
-              {shopDetail?.status === 'preparing' && (
-                <div
-                  style={{
-                    border: '1px solid #ddd',
-                    padding: '1rem',
-                    marginBottom: '1rem',
-                    borderRadius: '6px',
-                  }}
-                >
-                  <h3>商品を追加</h3>
-                  <div style={{ display: 'grid', gap: '0.5rem' }}>
-                    <label>
-                      商品名
-                      <input
-                        type="text"
-                        value={newProductDraft.name}
-                        onChange={(event) =>
-                          handleNewProductChange('name', event.target.value)
-                        }
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label>
-                      説明
+              <form className={styles.productForm} onSubmit={handleCreateProductSubmit}>
+                <h3 className={styles.subheading}>商品を追加</h3>
+                <div className={styles.formGrid}>
+                  <label className={styles.field}>
+                    <span>商品名</span>
+                    <input
+                      className={styles.input}
+                      type="text"
+                      value={newProductDraft.name}
+                      onChange={(event) =>
+                        handleNewProductChange('name', event.target.value)
+                      }
+                      required
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>説明</span>
+                    <textarea
+                      className={styles.textarea}
+                      value={newProductDraft.description}
+                      onChange={(event) =>
+                        handleNewProductChange('description', event.target.value)
+                      }
+                      rows={3}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>価格（税込）</span>
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min={0}
+                      value={newProductDraft.price}
+                      onChange={(event) =>
+                        handleNewProductChange('price', event.target.value)
+                      }
+                      required
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>在庫数</span>
+                    <input
+                      className={styles.input}
+                      type="number"
+                      min={0}
+                      value={newProductDraft.inventory}
+                      onChange={(event) =>
+                        handleNewProductChange('inventory', event.target.value)
+                      }
+                      required
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>商品画像URL</span>
+                    <input
+                      className={styles.input}
+                      type="url"
+                      value={newProductDraft.imageUrl}
+                      onChange={(event) =>
+                        handleNewProductChange('imageUrl', event.target.value)
+                      }
+                    />
+                  </label>
+                  <label className={`${styles.field} ${styles.checkboxField}`}>
+                    <input
+                      type="checkbox"
+                      checked={newProductDraft.questionEnabled}
+                      onChange={(event) =>
+                        handleNewProductChange(
+                          'questionEnabled',
+                          event.target.checked
+                        )
+                      }
+                    />
+                    <span>購入時質問を有効にする</span>
+                  </label>
+                  {newProductDraft.questionEnabled && (
+                    <label className={styles.field}>
+                      <span>質問文</span>
                       <textarea
-                        value={newProductDraft.description}
-                        onChange={(event) =>
-                          handleNewProductChange('description', event.target.value)
-                        }
-                        rows={3}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label>
-                      価格（税込）
-                      <input
-                        type="number"
-                        value={newProductDraft.price}
-                        onChange={(event) =>
-                          handleNewProductChange('price', event.target.value)
-                        }
-                        min={0}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label>
-                      在庫数
-                      <input
-                        type="number"
-                        value={newProductDraft.inventory}
-                        onChange={(event) =>
-                          handleNewProductChange('inventory', event.target.value)
-                        }
-                        min={0}
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label>
-                      商品画像URL
-                      <input
-                        type="url"
-                        value={newProductDraft.imageUrl}
-                        onChange={(event) =>
-                          handleNewProductChange('imageUrl', event.target.value)
-                        }
-                        style={{ width: '100%' }}
-                      />
-                    </label>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={newProductDraft.questionEnabled}
+                        className={styles.textarea}
+                        value={newProductDraft.questionText}
                         onChange={(event) =>
                           handleNewProductChange(
-                            'questionEnabled',
-                            event.target.checked
+                            'questionText',
+                            event.target.value
                           )
                         }
+                        rows={2}
                       />
-                      購入時質問を有効にする
                     </label>
-                    {newProductDraft.questionEnabled && (
-                      <label>
-                        質問文
-                        <textarea
-                          value={newProductDraft.questionText}
-                          onChange={(event) =>
-                            handleNewProductChange(
-                              'questionText',
-                              event.target.value
-                            )
-                          }
-                          rows={2}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                    )}
-                  </div>
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <button
-                      type="button"
-                      onClick={handleCreateProduct}
-                      disabled={Boolean(productSaving.__new__)}
-                    >
-                      商品を追加
-                    </button>
-                  </div>
+                  )}
                 </div>
-              )}
-
-              {products.length === 0 && !productsLoading && (
-                <p>登録済みの商品はありません。</p>
-              )}
-
-              {products.map((product) => {
-                const draft =
-                  productDrafts[product.id] ?? {
-                    name: product.name ?? '',
-                    description: product.description ?? '',
-                    price: String(product.price ?? ''),
-                    inventory: String(product.inventory ?? ''),
-                    imageUrl: product.imageUrl ?? '',
-                    questionEnabled: Boolean(product.questionEnabled),
-                    questionText: product.questionText ?? '',
-                  };
-
-                const saving = Boolean(productSaving[product.id]);
-                const disableFields = shopDetail?.status === 'open';
-
-                return (
-                  <div
-                    key={product.id}
-                    style={{
-                      border: '1px solid #ddd',
-                      padding: '1rem',
-                      marginBottom: '1rem',
-                      borderRadius: '6px',
-                    }}
+                <div className={styles.buttonRow}>
+                  <button
+                    type="submit"
+                    className={styles.primaryButton}
+                    disabled={Boolean(productSaving.__new__)}
                   >
-                    <h3 style={{ marginTop: 0 }}>{product.name}</h3>
-                    <div style={{ display: 'grid', gap: '0.5rem' }}>
-                      <label>
-                        商品名
-                        <input
-                          type="text"
-                          value={draft.name}
-                          disabled={disableFields || saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'name',
-                              event.target.value
-                            )
-                          }
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        説明
-                        <textarea
-                          value={draft.description}
-                          disabled={disableFields || saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'description',
-                              event.target.value
-                            )
-                          }
-                          rows={3}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        価格（税込）
-                        <input
-                          type="number"
-                          value={draft.price}
-                          disabled={disableFields || saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'price',
-                              event.target.value
-                            )
-                          }
-                          min={0}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        在庫数
-                        <input
-                          type="number"
-                          value={draft.inventory}
-                          disabled={saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'inventory',
-                              event.target.value
-                            )
-                          }
-                          min={0}
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        商品画像URL
-                        <input
-                          type="url"
-                          value={draft.imageUrl}
-                          disabled={disableFields || saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'imageUrl',
-                              event.target.value
-                            )
-                          }
-                          style={{ width: '100%' }}
-                        />
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={draft.questionEnabled}
-                          disabled={disableFields || saving}
-                          onChange={(event) =>
-                            handleProductDraftChange(
-                              product.id,
-                              'questionEnabled',
-                              event.target.checked
-                            )
-                          }
-                        />
-                        購入時質問を有効にする
-                      </label>
-                      {draft.questionEnabled && (
-                        <label>
-                          質問文
-                          <textarea
-                            value={draft.questionText}
-                            disabled={disableFields || saving}
-                            onChange={(event) =>
-                              handleProductDraftChange(
-                                product.id,
-                                'questionText',
-                                event.target.value
-                              )
-                            }
-                            rows={2}
-                            style={{ width: '100%' }}
-                          />
-                        </label>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleProductSave(product.id)}
-                        disabled={saving}
-                      >
-                        保存
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleProductDelete(product.id)}
-                        disabled={saving}
-                      >
-                        削除
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </section>
-
-            <section>
-              <h2>受注一覧</h2>
-              {ordersLoading && <p>注文を読み込んでいます...</p>}
-              {!ordersLoading && ordersError && (
-                <div style={{ color: 'crimson' }}>
-                  <p>
-                    注文取得に失敗しました: {ordersError.message}
-                  </p>
-                  {debugMode && ordersError.debug && (
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        background: '#fee',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {ordersError.debug}
-                    </pre>
-                  )}
+                    商品を追加
+                  </button>
                 </div>
-              )}
-              {!ordersLoading && !ordersError && orders.length === 0 && (
-                <p>まだ注文はありません。</p>
-              )}
-              {actionMessage && (
-                <p style={{ color: 'teal' }}>{actionMessage}</p>
-              )}
-              {actionError && (
-                <div style={{ color: 'crimson' }}>
-                  <p>操作に失敗しました: {actionError.message}</p>
-                  {debugMode && actionError.debug && (
-                    <pre
-                      style={{
-                        whiteSpace: 'pre-wrap',
-                        background: '#fee',
-                        padding: '0.5rem',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      {actionError.debug}
-                    </pre>
-                  )}
-                </div>
-              )}
-              {!ordersLoading && !ordersError && orders.length > 0 && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>注文ID</th>
-                      <th>購入日</th>
-                      <th>購入者ID</th>
-                      <th>商品</th>
-                      <th>合計</th>
-                      <th>質問回答</th>
-                      <th>ステータス</th>
-                      <th>メモ / 取引終了</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orders.map((order) => {
-                      const isPending = order.status === 'pending';
-                      const isProcessing =
-                        actionState?.orderId === order.id;
-                      const draft =
-                        orderDrafts[order.id] ?? {
-                          memo: order.memo ?? '',
-                          closed: Boolean(order.closed),
-                        };
-                      const savingMeta = Boolean(orderSaving[order.id]);
+              </form>
 
-                      return (
-                        <tr key={order.id}>
-                          <td>{order.id}</td>
-                          <td>{formatTimestamp(order.createdAt)}</td>
-                          <td>{order.buyerDisplayId}</td>
-                          <td>
-                            <ul>
-                              {order.items.map((item, index) => (
-                                <li key={`${order.id}-${index}`}>
-                                  {item.name} × {item.quantity}（
-                                  {formatCurrency(item.unitPrice)}）
-                                </li>
-                              ))}
-                            </ul>
-                          </td>
-                          <td>{formatCurrency(order.total)}</td>
-                          <td>
-                            {order.questionResponse
-                              ? order.questionResponse
-                              : '-'}
-                          </td>
-                          <td>{order.status}</td>
-                          <td>
-                            <div style={{ display: 'grid', gap: '0.25rem' }}>
+              {productsLoading ? (
+                <p>商品を読み込んでいます...</p>
+              ) : products.length === 0 ? (
+                <p className={styles.note}>登録済みの商品はありません。</p>
+              ) : (
+                <div className={styles.productGrid}>
+                  {products.map((product) => {
+                    const draft =
+                      productDrafts[product.id] ?? {
+                        name: product.name ?? '',
+                        description: product.description ?? '',
+                        price: String(product.price ?? ''),
+                        inventory: String(product.inventory ?? ''),
+                        imageUrl: product.imageUrl ?? '',
+                        questionEnabled: Boolean(product.questionEnabled),
+                        questionText: product.questionText ?? '',
+                      };
+
+                    const saving = Boolean(productSaving[product.id]);
+                    const disableFields = shopDetail?.status === 'open';
+
+                    return (
+                      <article key={product.id} className={styles.productCard}>
+                        <div className={styles.productCardHeader}>
+                          <div>
+                            <h3>{product.name || '商品名未設定'}</h3>
+                            <p className={styles.productMeta}>
+                              在庫 {product.inventory} / {product.price.toLocaleString()} 円
+                            </p>
+                          </div>
+                          {product.inventory <= 3 && (
+                            <span className={styles.badgeWarning}>在庫わずか</span>
+                          )}
+                        </div>
+                        <div className={styles.formGrid}>
+                          <label className={styles.field}>
+                            <span>商品名</span>
+                            <input
+                              className={styles.input}
+                              type="text"
+                              value={draft.name}
+                              disabled={disableFields || saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'name',
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+                          <label className={styles.field}>
+                            <span>説明</span>
+                            <textarea
+                              className={styles.textarea}
+                              value={draft.description}
+                              disabled={disableFields || saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'description',
+                                  event.target.value
+                                )
+                              }
+                              rows={3}
+                            />
+                          </label>
+                          <label className={styles.field}>
+                            <span>価格（税込）</span>
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min={0}
+                              value={draft.price}
+                              disabled={disableFields || saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'price',
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+                          <label className={styles.field}>
+                            <span>在庫数</span>
+                            <input
+                              className={styles.input}
+                              type="number"
+                              min={0}
+                              value={draft.inventory}
+                              disabled={saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'inventory',
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+                          <label className={styles.field}>
+                            <span>商品画像URL</span>
+                            <input
+                              className={styles.input}
+                              type="url"
+                              value={draft.imageUrl}
+                              disabled={disableFields || saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'imageUrl',
+                                  event.target.value
+                                )
+                              }
+                            />
+                          </label>
+                          <label className={`${styles.field} ${styles.checkboxField}`}>
+                            <input
+                              type="checkbox"
+                              checked={draft.questionEnabled}
+                              disabled={disableFields || saving}
+                              onChange={(event) =>
+                                handleProductDraftChange(
+                                  product.id,
+                                  'questionEnabled',
+                                  event.target.checked
+                                )
+                              }
+                            />
+                            <span>購入時質問を有効にする</span>
+                          </label>
+                          {draft.questionEnabled && (
+                            <label className={styles.field}>
+                              <span>質問文</span>
                               <textarea
-                                value={draft.memo}
-                                rows={2}
+                                className={styles.textarea}
+                                value={draft.questionText}
+                                disabled={disableFields || saving}
                                 onChange={(event) =>
-                                  handleOrderDraftChange(
-                                    order.id,
-                                    'memo',
+                                  handleProductDraftChange(
+                                    product.id,
+                                    'questionText',
                                     event.target.value
                                   )
                                 }
-                                style={{ width: '100%' }}
+                                rows={2}
                               />
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  checked={draft.closed}
+                            </label>
+                          )}
+                        </div>
+                        <div className={styles.buttonRow}>
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            onClick={() => handleProductSave(product.id)}
+                            disabled={saving}
+                          >
+                            保存
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.destructiveButton}
+                            onClick={() => handleProductDelete(product.id)}
+                            disabled={saving}
+                          >
+                            非表示にする
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <section className={`${styles.card} ${styles.ordersCard}`}>
+              <div className={styles.cardHeader}>
+                <div>
+                  <h2 className={styles.sectionTitle}>受注一覧</h2>
+                  <p className={styles.sectionDescription}>
+                    注文のステータスとメモを管理します。
+                  </p>
+                </div>
+              </div>
+              {ordersLoading && <p>注文を読み込んでいます...</p>}
+              {!ordersLoading && ordersError && (
+                <div className={styles.errorBanner}>
+                  <p>注文取得に失敗しました: {ordersError.message}</p>
+                  {debugMode && ordersError.debug && <pre>{ordersError.debug}</pre>}
+                </div>
+              )}
+              {actionMessage && (
+                <p className={styles.successText}>{actionMessage}</p>
+              )}
+              {actionError && (
+                <div className={styles.errorBanner}>
+                  <p>操作に失敗しました: {actionError.message}</p>
+                  {debugMode && actionError.debug && <pre>{actionError.debug}</pre>}
+                </div>
+              )}
+              {!ordersLoading && !ordersError && orders.length === 0 ? (
+                <p className={styles.note}>まだ注文はありません。</p>
+              ) : (
+                <div className={styles.tableWrapper}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>注文ID</th>
+                        <th>購入日</th>
+                        <th>購入者ID</th>
+                        <th>商品</th>
+                        <th>合計</th>
+                        <th>質問回答</th>
+                        <th>ステータス</th>
+                        <th>メモ / 取引終了</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orders.map((order) => {
+                        const isPending = order.status === 'pending';
+                        const isProcessing =
+                          actionState?.orderId === order.id;
+                        const draft =
+                          orderDrafts[order.id] ?? {
+                            memo: order.memo ?? '',
+                            closed: Boolean(order.closed),
+                          };
+                        const savingMeta = Boolean(orderSaving[order.id]);
+
+                        return (
+                          <tr key={order.id}>
+                            <td>{order.id}</td>
+                            <td>{formatTimestamp(order.createdAt)}</td>
+                            <td>{order.buyerDisplayId}</td>
+                            <td>
+                              <ul className={styles.itemList}>
+                                {order.items.map((item, index) => (
+                                  <li key={`${order.id}-${index}`}>
+                                    {item.name} × {item.quantity}（
+                                    {formatCurrency(item.unitPrice)}）
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                            <td>{formatCurrency(order.total)}</td>
+                            <td>{order.questionResponse || '-'}</td>
+                            <td>{order.status}</td>
+                            <td>
+                              <div className={styles.orderMetaControls}>
+                                <textarea
+                                  className={styles.textarea}
+                                  value={draft.memo}
+                                  rows={2}
                                   onChange={(event) =>
                                     handleOrderDraftChange(
                                       order.id,
-                                      'closed',
-                                      event.target.checked
+                                      'memo',
+                                      event.target.value
                                     )
                                   }
                                 />
-                                取引終了
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => handleOrderMetaSave(order.id)}
-                                disabled={savingMeta}
-                              >
-                                メモを保存
-                              </button>
-                            </div>
-                          </td>
-                          <td>
-                            {isPending ? (
-                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <label className={styles.checkboxField}>
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.closed}
+                                    onChange={(event) =>
+                                      handleOrderDraftChange(
+                                        order.id,
+                                        'closed',
+                                        event.target.checked
+                                      )
+                                    }
+                                  />
+                                  <span>取引終了</span>
+                                </label>
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    handleOrderAction(order.id, 'accept')
-                                  }
-                                  disabled={isProcessing}
+                                  className={styles.secondaryButton}
+                                  onClick={() => handleOrderMetaSave(order.id)}
+                                  disabled={savingMeta}
                                 >
-                                  {isProcessing &&
-                                  actionState?.action === 'accept'
-                                    ? '処理中...'
-                                    : '注文確定'}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleOrderAction(order.id, 'cancel')
-                                  }
-                                  disabled={isProcessing}
-                                >
-                                  {isProcessing &&
-                                  actionState?.action === 'cancel'
-                                    ? '処理中...'
-                                    : 'キャンセル'}
+                                  メモを保存
                                 </button>
                               </div>
-                            ) : (
-                              <span>-</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td>
+                              {isPending ? (
+                                <div className={styles.inlineButtons}>
+                                  <button
+                                    type="button"
+                                    className={styles.primaryButton}
+                                    onClick={() =>
+                                      handleOrderAction(order.id, 'accept')
+                                    }
+                                    disabled={isProcessing}
+                                  >
+                                    {isProcessing &&
+                                    actionState?.action === 'accept'
+                                      ? '処理中...'
+                                      : '注文確定'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.outlineButton}
+                                    onClick={() =>
+                                      handleOrderAction(order.id, 'cancel')
+                                    }
+                                    disabled={isProcessing}
+                                  >
+                                    {isProcessing &&
+                                    actionState?.action === 'cancel'
+                                      ? '処理中...'
+                                      : 'キャンセル'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <span>-</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
-          </section>
+          </div>
         )}
+        </div>
       </main>
     </>
   );

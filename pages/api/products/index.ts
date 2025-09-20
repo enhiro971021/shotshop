@@ -21,12 +21,6 @@ export default async function handler(
     }
 
     if (req.method === 'POST') {
-      if (shop.status !== 'preparing') {
-        res
-          .status(400)
-          .json({ message: 'ショップ公開中は商品の追加ができません' });
-        return;
-      }
       const product = await createProduct(shopId, req.body ?? {});
       res.status(201).json({ item: product });
       return;
