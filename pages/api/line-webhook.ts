@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import type {
+  FlexComponent,
   Message,
   MessageEvent,
   PostbackEvent,
@@ -336,6 +337,24 @@ function buildConfirmationMessage(
     product.id
   )}&shopId=${encodeURIComponent(shop.shopId)}`;
 
+  const questionComponents: FlexComponent[] = [];
+  if (questionResponse) {
+    questionComponents.push({
+      type: 'box',
+      layout: 'vertical',
+      contents: [
+        { type: 'text', text: '質問回答', color: '#94a3b8', size: 'sm' },
+        {
+          type: 'text',
+          text: questionResponse,
+          wrap: true,
+          color: '#0f172a',
+          size: 'sm',
+        },
+      ],
+    });
+  }
+
   return {
     type: 'flex',
     altText: '注文内容を確認してください',
@@ -357,7 +376,7 @@ function buildConfirmationMessage(
             text: product.name ?? '商品名未設定',
             wrap: true,
           },
-          {
+         {
             type: 'box',
             layout: 'vertical',
             spacing: 'sm',
@@ -391,29 +410,7 @@ function buildConfirmationMessage(
                   },
                 ],
               },
-              ...(questionResponse
-                ? [
-                    {
-                      type: 'box',
-                      layout: 'vertical',
-                      contents: [
-                        {
-                          type: 'text',
-                          text: '質問回答',
-                          color: '#94a3b8',
-                          size: 'sm',
-                        },
-                        {
-                          type: 'text',
-                          text: questionResponse,
-                          wrap: true,
-                          color: '#0f172a',
-                          size: 'sm',
-                        },
-                      ],
-                    },
-                  ]
-                : []),
+              ...questionComponents,
             ],
           },
           {
