@@ -44,6 +44,17 @@
   - `createdAt` / `updatedAt` (timestamp)
   - `acceptedAt` / `canceledAt` (timestamp)
 
+### `buyerSessions`
+- **Document ID**: `buyerUserId`（Messaging API の `source.userId`）
+- **Fields**
+  - `buyerUserId` (string)
+  - `state` (`idle` | `choosingProduct` | `choosingQuantity` | `answeringQuestion` | `confirming`)
+  - `shopId` (string)
+  - `productId` (string)
+  - `quantity` (number)
+  - `questionResponse` (string | null)
+  - `updatedAt` (timestamp)
+
 ## Recommended Indexes
 
 Create the following composite indexes from the Firebase console.
