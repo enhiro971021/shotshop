@@ -625,6 +625,10 @@ async function handleBuyerPostback(
   params: URLSearchParams
 ) {
   const buyerUserId = event.source.userId;
+  if (!buyerUserId) {
+    await replyText(event.replyToken, 'ユーザー情報が取得できませんでした。');
+    return;
+  }
   const session = await getBuyerSession(buyerUserId);
 
   if (action === 'buyer-cancel-flow') {
