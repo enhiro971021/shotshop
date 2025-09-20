@@ -32,8 +32,8 @@ export async function getBuyerSession(buyerUserId: string) {
     updatedAt?: FirebaseFirestore.Timestamp;
   };
   return {
-    buyerUserId,
     ...data,
+    buyerUserId,
   };
 }
 
