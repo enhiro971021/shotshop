@@ -16,17 +16,59 @@ export type ShopRecord = {
 
 const DEFAULT_PURCHASE_MESSAGE = 'ご購入ありがとうございます！支払い方法については追ってご連絡します。';
 
+const SHOP_ID_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
+const SHOP_ID_LENGTH = 6;
+
+function randomShopId() {
+  let result = '';
+  for (let i = 0; i < SHOP_ID_LENGTH; i += 1) {
+    const index = Math.floor(Math.random() * SHOP_ID_ALPHABET.length);
+    result += SHOP_ID_ALPHABET[index];
+  }
+  return result;
+}
+
+async function generateUniqueShopId() {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = randomShopId();
+    const snapshot = await db
+      .collection('shops')
+      .where('shopId', '==', candidate)
+      .limit(1)
+      .get();
+    if (snapshot.empty) {
+      return candidate;
+    }
+  }
+
+  throw new Error('ショップIDの生成に失敗しました。時間をおいて再度お試しください');
+}
+
 export async function getOrCreateShop(ownerUserId: string) {
   const shopRef = db.collection('shops').doc(ownerUserId);
   const snapshot = await shopRef.get();
 
   if (snapshot.exists) {
-    return snapshot.data() as ShopRecord;
+    const data = snapshot.data() as ShopRecord;
+    if (!data.shopId) {
+      const newShopId = await generateUniqueShopId();
+      await shopRef.set(
+        {
+          shopId: newShopId,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      const updated = await shopRef.get();
+      return updated.data() as ShopRecord;
+    }
+    return data;
   }
 
+  const newShopId = await generateUniqueShopId();
   const shop: ShopRecord = {
     ownerUserId,
-    shopId: ownerUserId,
+    shopId: newShopId,
     name: '新しいショップ',
     purchaseMessage: DEFAULT_PURCHASE_MESSAGE,
     status: 'preparing',
@@ -49,6 +91,20 @@ export async function getShop(ownerUserId: string) {
   }
 
   return snapshot.data() as ShopRecord;
+}
+
+export async function getShopByPublicId(shopId: string) {
+  const snapshot = await db
+    .collection('shops')
+    .where('shopId', '==', shopId)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) {
+    return null;
+  }
+
+  return snapshot.docs[0].data() as ShopRecord;
 }
 
 export async function updateShop(

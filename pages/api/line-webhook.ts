@@ -13,7 +13,7 @@ import {
   validateLineConfig,
 } from '../../lib/line';
 import { db } from '../../lib/firebase-admin';
-import { getOrCreateShop } from '../../lib/shops';
+import { getOrCreateShop, getShopByPublicId } from '../../lib/shops';
 import type { ShopRecord } from '../../lib/shops';
 import {
   consumeContactPendingOrder,
@@ -168,18 +168,11 @@ async function handleEvent(event: WebhookEvent) {
 type ActiveShop = ShopRecord;
 
 async function fetchActiveShop(shopId: string) {
-  const doc = await db.collection('shops').doc(shopId).get();
-  if (!doc.exists) {
+  const shop = await getShopByPublicId(shopId);
+  if (!shop || shop.status !== 'open') {
     return null;
   }
-  const data = doc.data() as ShopRecord;
-  if (data.status !== 'open') {
-    return null;
-  }
-  if (!data.shopId) {
-    data.shopId = doc.id;
-  }
-  return data;
+  return shop;
 }
 
 function formatCurrency(value: number) {
@@ -698,13 +691,12 @@ async function handleBuyerPostback(
       return;
     }
 
-    const shopDoc = await db.collection('shops').doc(session.shopId).get();
-    if (!shopDoc.exists) {
+    const shop = await getShopByPublicId(session.shopId);
+    if (!shop) {
       await replyText(event.replyToken, 'ショップが見つかりません。');
       await resetBuyerSession(buyerUserId);
       return;
     }
-    const shop = shopDoc.data() as ShopRecord;
     const products = await listProducts(session.shopId);
     const product = products.find((item) => item.id === session.productId);
     if (!product) {

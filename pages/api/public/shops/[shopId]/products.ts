@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { db } from '../../../../../lib/firebase-admin';
 import type { ProductRecord } from '../../../../../lib/products';
+import { getShopByPublicId } from '../../../../../lib/shops';
 
 export default async function handler(
   req: NextApiRequest,
@@ -18,15 +19,15 @@ export default async function handler(
     return;
   }
 
-  const shopDoc = await db.collection('shops').doc(shopId).get();
-  if (!shopDoc.exists || (shopDoc.data()?.status ?? 'preparing') !== 'open') {
+  const shop = await getShopByPublicId(shopId);
+  if (!shop || shop.status !== 'open') {
     res.status(403).json({ message: '現在このショップは準備中です' });
     return;
   }
 
   const snapshot = await db
     .collection('products')
-    .where('shopId', '==', shopId)
+    .where('shopId', '==', shop.shopId)
     .get();
 
   const records: Array<ProductRecord & { id: string }> = snapshot.docs.map(

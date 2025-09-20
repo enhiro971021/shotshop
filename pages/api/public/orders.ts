@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { verifyLineIdToken } from '../../../lib/line-auth';
-import { db } from '../../../lib/firebase-admin';
 import { createPendingOrder } from '../../../lib/orders';
 import { notifyNewOrder } from '../../../lib/notifications';
 import { getProduct } from '../../../lib/products';
+import { getShopByPublicId } from '../../../lib/shops';
 import type { ShopRecord } from '../../../lib/shops';
 
 export default async function handler(
@@ -41,30 +41,18 @@ export default async function handler(
     const buyerPayload = await verifyLineIdToken(buyerIdToken);
     const buyerUserId = buyerPayload.sub;
 
-    const shopSnapshot = await db.collection('shops').doc(shopId).get();
-    if (!shopSnapshot.exists) {
+    const shop = await getShopByPublicId(shopId);
+    if (!shop) {
       res.status(404).json({ message: 'ショップが見つかりません' });
       return;
     }
-    const shopData = shopSnapshot.data();
-    if (!shopData || shopData.status !== 'open') {
+    if (shop.status !== 'open') {
       res.status(403).json({ message: '現在このショップは購入できません' });
       return;
     }
 
-    const shop: ShopRecord = {
-      ownerUserId: shopData.ownerUserId,
-      shopId,
-      name: shopData.name,
-      purchaseMessage: shopData.purchaseMessage,
-      status: shopData.status,
-      createdAt: shopData.createdAt ?? null,
-      updatedAt: shopData.updatedAt ?? null,
-      contactPendingOrderId: shopData.contactPendingOrderId ?? null,
-    };
-
     const product = await getProduct(productId);
-    if (product.shopId !== shopId) {
+    if (product.shopId !== shop.shopId) {
       res.status(400).json({ message: '商品がこのショップに属していません' });
       return;
     }

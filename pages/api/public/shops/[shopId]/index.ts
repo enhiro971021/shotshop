@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { db } from '../../../../../lib/firebase-admin';
+import { getShopByPublicId } from '../../../../../lib/shops';
 
 export default async function handler(
   req: NextApiRequest,
@@ -17,24 +17,23 @@ export default async function handler(
     return;
   }
 
-  const doc = await db.collection('shops').doc(shopId).get();
-  if (!doc.exists) {
+  const shop = await getShopByPublicId(shopId);
+  if (!shop) {
     res.status(404).json({ message: 'ショップが見つかりません' });
     return;
   }
 
-  const data = doc.data() ?? {};
-  if (data.status !== 'open') {
+  if (shop.status !== 'open') {
     res.status(403).json({ message: '現在このショップは準備中です' });
     return;
   }
 
   res.status(200).json({
     shop: {
-      shopId: doc.id,
-      name: data.name,
-      purchaseMessage: data.purchaseMessage,
-      status: data.status,
+      shopId: shop.shopId,
+      name: shop.name,
+      purchaseMessage: shop.purchaseMessage,
+      status: shop.status,
     },
   });
 }
