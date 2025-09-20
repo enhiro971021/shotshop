@@ -291,17 +291,21 @@ function buildQuantityPromptMessage(
   shop: ActiveShop,
   product: Awaited<ReturnType<typeof listProducts>>[number]
 ) {
-  const quickReplyItems: QuickReplyItem[] = [1, 2, 3, 4, 5].map((num) => ({
-    type: 'action',
-    action: {
-      type: 'postback',
-      label: `${num}`,
-      data: `action=buyer-set-quantity&quantity=${num}&productId=${encodeURIComponent(
-        product.id
-      )}&shopId=${encodeURIComponent(shop.shopId)}`,
-      displayText: `${product.name} を ${num}個で注文`,
-    },
-  }));
+  const quickReplyItems: QuickReplyItem[] = [];
+
+  for (const num of [1, 2, 3, 4, 5]) {
+    quickReplyItems.push({
+      type: 'action',
+      action: {
+        type: 'postback',
+        label: `${num}`,
+        data: `action=buyer-set-quantity&quantity=${num}&productId=${encodeURIComponent(
+          product.id
+        )}&shopId=${encodeURIComponent(shop.shopId)}`,
+        displayText: `${product.name} を ${num}個で注文`,
+      },
+    });
+  }
 
   quickReplyItems.push({
     type: 'action',
