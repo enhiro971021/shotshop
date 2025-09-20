@@ -41,9 +41,10 @@ export async function saveBuyerSession(
   buyerUserId: string,
   session: Omit<BuyerSession, 'updatedAt'>
 ) {
+  const { buyerUserId: _, ...rest } = session;
   await collection.doc(buyerUserId).set(
     {
-      ...session,
+      ...rest,
       buyerUserId,
       updatedAt: FieldValue.serverTimestamp(),
     },
