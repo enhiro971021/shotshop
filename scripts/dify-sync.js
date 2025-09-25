@@ -10,7 +10,12 @@ const db = admin.firestore();
 
 const DIFY_API_KEY = process.env.DIFY_API_KEY;
 const DIFY_DATASET_ID = process.env.DIFY_DATASET_ID;
-const DIFY_INDEXING_TECHNIQUE = process.env.DIFY_INDEXING_TECHNIQUE || 'standard';
+const DIFY_INDEXING_TECHNIQUES = (() => {
+  const raw = process.env.DIFY_INDEXING_TECHNIQUE;
+  const primary = raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : ['high_quality'];
+  const fallbacks = ['high_quality', 'economy'];
+  return [...new Set([...primary, ...fallbacks])];
+})();
 
 const ts = (t) => t?.toDate ? t.toDate().toISOString() : (t ? new Date(t).toISOString() : '');
 
@@ -44,13 +49,13 @@ function shouldSync(d){
   return true;
 }
 
-async function difyCreateDocumentNew(name,text){
+async function difyCreateDocumentNew(name,text,indexingTechnique){
   const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/documents`, {
     method:'POST',
     headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
     body: JSON.stringify({
       name,
-      indexing_technique: DIFY_INDEXING_TECHNIQUE,
+      indexing_technique: indexingTechnique,
       content: [{ type: 'text', text }]
     })
   });
@@ -58,13 +63,13 @@ async function difyCreateDocumentNew(name,text){
   return r.json();
 }
 
-async function difyUpdateDocumentNew(id,name,text){
+async function difyUpdateDocumentNew(id,name,text,indexingTechnique){
   const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/documents/${id}`, {
     method:'PATCH',
     headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
     body: JSON.stringify({
       name,
-      indexing_technique: DIFY_INDEXING_TECHNIQUE,
+      indexing_technique: indexingTechnique,
       content: [{ type: 'text', text }]
     })
   });
@@ -72,11 +77,11 @@ async function difyUpdateDocumentNew(id,name,text){
   return r.json();
 }
 
-async function difyCreateByText(name,text){
+async function difyCreateByText(name,text,indexingTechnique){
   const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/document/create-by-text`, {
     method:'POST',
     headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name, text, indexing_technique: DIFY_INDEXING_TECHNIQUE })
+    body: JSON.stringify({ name, text, indexing_technique: indexingTechnique })
   });
   if(!r.ok) throw new Error(`create: ${r.status} ${await r.text()}`);
   return r.json();
@@ -98,24 +103,55 @@ async function difyDelete(id){
   if(!r.ok && r.status!==404) throw new Error(`delete: ${r.status} ${await r.text()}`);
 }
 
-async function difyCreateDocument(name,text){
+function getErrorMessage(err){
+  if (err instanceof Error) return err.message;
+  try { return JSON.stringify(err); } catch { return String(err); }
+}
+
+async function difyCreateDocumentWithTechnique(name,text,indexingTechnique){
   try{
-    return await difyCreateDocumentNew(name,text);
+    return await difyCreateDocumentNew(name,text,indexingTechnique);
   }catch(err){
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('dify create via new API failed, fallback to legacy:', msg);
-    return difyCreateByText(name,text);
+    console.warn(`dify create via new API failed (indexing=${indexingTechnique}), fallback to legacy:`, getErrorMessage(err));
   }
+  return difyCreateByText(name,text,indexingTechnique);
+}
+
+async function difyCreateDocument(name,text){
+  let lastError;
+  for (const technique of DIFY_INDEXING_TECHNIQUES){
+    try {
+      return await difyCreateDocumentWithTechnique(name,text,technique);
+    } catch (err) {
+      lastError = err;
+      console.warn(`dify create failed (indexing=${technique}):`, getErrorMessage(err));
+    }
+  }
+  if (lastError) throw lastError;
+  throw new Error('dify create failed: no indexing technique succeeded');
+}
+
+async function difyUpdateDocumentWithTechnique(id,name,text,indexingTechnique){
+  try{
+    return await difyUpdateDocumentNew(id,name,text,indexingTechnique);
+  }catch(err){
+    console.warn(`dify update via new API failed (indexing=${indexingTechnique}), fallback to legacy:`, getErrorMessage(err));
+  }
+  return difyUpdateByText(id,name,text);
 }
 
 async function difyUpdateDocument(id,name,text){
-  try{
-    return await difyUpdateDocumentNew(id,name,text);
-  }catch(err){
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn('dify update via new API failed, fallback to legacy:', msg);
-    return difyUpdateByText(id,name,text);
+  let lastError;
+  for (const technique of DIFY_INDEXING_TECHNIQUES){
+    try {
+      return await difyUpdateDocumentWithTechnique(id,name,text,technique);
+    } catch (err) {
+      lastError = err;
+      console.warn(`dify update failed (indexing=${technique}):`, getErrorMessage(err));
+    }
   }
+  if (lastError) throw lastError;
+  throw new Error('dify update failed: no indexing technique succeeded');
 }
 
 (async ()=>{
