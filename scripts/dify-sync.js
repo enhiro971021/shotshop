@@ -47,7 +47,7 @@ async function difyCreateByText(name,text){
   const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/document/create-by-text`, {
     method:'POST',
     headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name, text, indexing_technique:'high_quality', doc_form:'text_model' })
+    body: JSON.stringify({ name, text })
   });
   if(!r.ok) throw new Error(`create: ${r.status} ${await r.text()}`);
   return r.json();
