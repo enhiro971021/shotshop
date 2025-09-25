@@ -1,0 +1,17 @@
+#!/usr/bin/expect -f
+set timeout -1
+spawn bash -lc "source /usr/local/share/nvm/nvm.sh && nvm use 20 >/dev/null && firebase init functions --project shotshop-13dfb"
+expect {
+  "What language would you like to use to write Cloud Functions?" { send "\u001b[B\r" }
+}
+expect {
+  "Do you want to use ESLint to catch probable bugs and enforce style?" { send "\r" }
+}
+expect {
+  "Do you want to use experimental Web Frameworks feature with Cloud Functions (beta)?" { send "n\r" }
+  "Do you want to use experimental Web Frameworks" { send "n\r" }
+}
+expect {
+  "Do you want to install dependencies with npm now?" { send "\r" }
+}
+expect eof
