@@ -10,6 +10,7 @@ const db = admin.firestore();
 
 const DIFY_API_KEY = process.env.DIFY_API_KEY;
 const DIFY_DATASET_ID = process.env.DIFY_DATASET_ID;
+const DIFY_INDEXING_TECHNIQUE = process.env.DIFY_INDEXING_TECHNIQUE || 'standard';
 
 const ts = (t) => t?.toDate ? t.toDate().toISOString() : (t ? new Date(t).toISOString() : '');
 
@@ -43,11 +44,39 @@ function shouldSync(d){
   return true;
 }
 
+async function difyCreateDocumentNew(name,text){
+  const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/documents`, {
+    method:'POST',
+    headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      name,
+      indexing_technique: DIFY_INDEXING_TECHNIQUE,
+      content: [{ type: 'text', text }]
+    })
+  });
+  if(!r.ok) throw new Error(`create(new): ${r.status} ${await r.text()}`);
+  return r.json();
+}
+
+async function difyUpdateDocumentNew(id,name,text){
+  const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/documents/${id}`, {
+    method:'PATCH',
+    headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      name,
+      indexing_technique: DIFY_INDEXING_TECHNIQUE,
+      content: [{ type: 'text', text }]
+    })
+  });
+  if(!r.ok) throw new Error(`update(new): ${r.status} ${await r.text()}`);
+  return r.json();
+}
+
 async function difyCreateByText(name,text){
   const r = await fetch(`https://api.dify.ai/v1/datasets/${DIFY_DATASET_ID}/document/create-by-text`, {
     method:'POST',
     headers:{ Authorization:`Bearer ${DIFY_API_KEY}`, 'Content-Type':'application/json' },
-    body: JSON.stringify({ name, text, indexing_technique: 'high_quality' })
+    body: JSON.stringify({ name, text, indexing_technique: DIFY_INDEXING_TECHNIQUE })
   });
   if(!r.ok) throw new Error(`create: ${r.status} ${await r.text()}`);
   return r.json();
@@ -69,6 +98,26 @@ async function difyDelete(id){
   if(!r.ok && r.status!==404) throw new Error(`delete: ${r.status} ${await r.text()}`);
 }
 
+async function difyCreateDocument(name,text){
+  try{
+    return await difyCreateDocumentNew(name,text);
+  }catch(err){
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('dify create via new API failed, fallback to legacy:', msg);
+    return difyCreateByText(name,text);
+  }
+}
+
+async function difyUpdateDocument(id,name,text){
+  try{
+    return await difyUpdateDocumentNew(id,name,text);
+  }catch(err){
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('dify update via new API failed, fallback to legacy:', msg);
+    return difyUpdateByText(id,name,text);
+  }
+}
+
 (async ()=>{
   console.log("Target Dataset ID:", (DIFY_DATASET_ID||"").slice(0,8)+"...");
   const snap = await db.collection('products').get(); // ← products だけを同期
@@ -80,10 +129,10 @@ async function difyDelete(id){
     if (shouldSync(d)){
       const text = buildText(d);
       if (difyId){
-        await difyUpdateByText(difyId, name, text);
+        await difyUpdateDocument(difyId, name, text);
         console.log('updated', doc.id);
       } else {
-        const { document } = await difyCreateByText(name, text);
+        const { document } = await difyCreateDocument(name, text);
         await doc.ref.set({ dify: { documentId: document?.id } }, { merge:true });
         console.log('created', doc.id, '->', document?.id);
       }
